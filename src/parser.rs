@@ -142,6 +142,24 @@ fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
         return parse_json_manifest(&cc_path).map(|m| (m, ManifestFormat::ClaudeCode));
     }
 
+    // Try Cursor format: .cursor-plugin/plugin.json
+    let cursor_path = dir.join(".cursor-plugin").join("plugin.json");
+    if cursor_path.exists() {
+        return parse_json_manifest(&cursor_path).map(|m| (m, ManifestFormat::ClaudeCode));
+    }
+
+    // Try Codex format: .codex-plugin/plugin.json
+    let codex_path = dir.join(".codex-plugin").join("plugin.json");
+    if codex_path.exists() {
+        return parse_json_manifest(&codex_path).map(|m| (m, ManifestFormat::ClaudeCode));
+    }
+
+    // Try OpenClaw format: openclaw.plugin.json
+    let openclaw_path = dir.join("openclaw.plugin.json");
+    if openclaw_path.exists() {
+        return parse_json_manifest(&openclaw_path).map(|m| (m, ManifestFormat::ClaudeCode));
+    }
+
     // Try root plugin.json
     let root_json = dir.join("plugin.json");
     if root_json.exists() {

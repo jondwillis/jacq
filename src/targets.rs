@@ -164,6 +164,92 @@ fn build_matrix(levels: &[SupportLevel]) -> CapabilityMatrix {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Manifest field matrix — which fields each target uses
+// ---------------------------------------------------------------------------
+
+/// Whether a manifest field is used by a target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldSupport {
+    /// Target uses this field in its manifest
+    Yes,
+    /// Target does not use this field
+    No,
+}
+
+/// Canonical manifest field keys — the single source of truth.
+/// Every field_matrix entry uses exactly these keys in order.
+pub const MANIFEST_FIELD_KEYS: &[&str] = &[
+    // Core identity (all targets)
+    "name",
+    "version",
+    "description",
+    "author",
+    "license",
+    "keywords",
+    // URLs
+    "homepage",
+    "repository",
+    // Component paths
+    "commands",
+    "agents",
+    "skills",
+    "hooks",
+    "mcpServers",
+    "outputStyles",
+    "lspServers",
+    // Config
+    "userConfig",
+    "channels",
+    // Cursor-specific
+    "displayName",
+    "logo",
+    // Codex-specific
+    "apps",
+    "interface",
+    // OpenClaw-specific
+    "id",
+    "configSchema",
+    "providers",
+];
+
+/// Build a field matrix from support levels in MANIFEST_FIELD_KEYS order.
+fn build_field_matrix(levels: &[FieldSupport]) -> BTreeMap<String, FieldSupport> {
+    assert_eq!(
+        levels.len(),
+        MANIFEST_FIELD_KEYS.len(),
+        "field matrix must have exactly {} entries, got {}",
+        MANIFEST_FIELD_KEYS.len(),
+        levels.len()
+    );
+    MANIFEST_FIELD_KEYS
+        .iter()
+        .zip(levels)
+        .map(|(k, v)| (k.to_string(), *v))
+        .collect()
+}
+
+/// Returns which manifest fields a target uses.
+///
+/// Emitters consult this to include only the fields relevant to their target —
+/// Cursor gets displayName, Codex gets apps/interface, OpenClaw gets id/configSchema, etc.
+pub fn field_matrix(target: Target) -> BTreeMap<String, FieldSupport> {
+    use FieldSupport::*;
+
+    match target {
+        //                                name ver  desc auth lic  kw   home repo cmds agts skls hook mcp  oSty lsp  uCfg chan  dNam logo apps intf id   cSch prov
+        Target::ClaudeCode => build_field_matrix(&[Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  No,  No,  No,  No,  No]),
+        Target::OpenCode   => build_field_matrix(&[Yes, Yes, Yes, No,  Yes, Yes, No,  No,  No,  Yes, No,  No,  Yes, No,  Yes, No,  No,  No,  No,  No,  No,  No,  No,  No]),
+        Target::Codex      => build_field_matrix(&[Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  No,  No,  Yes, No,  Yes, No,  No,  No,  No,  No,  No,  Yes, Yes, No,  No,  No]),
+        Target::Cursor     => build_field_matrix(&[Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  No,  No,  No]),
+        Target::OpenClaw   => build_field_matrix(&[Yes, Yes, Yes, No,  No,  No,  No,  No,  No,  No,  Yes, No,  No,  No,  No,  No,  Yes, No,  No,  No,  No,  Yes, Yes, Yes]),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Capability matrix
+// ---------------------------------------------------------------------------
+
 /// Returns the built-in capability matrix for a target.
 ///
 /// These are embedded in the binary and updated as targets evolve.

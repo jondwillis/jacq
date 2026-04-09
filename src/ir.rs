@@ -133,6 +133,37 @@ pub struct PluginManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channels: Option<Vec<Channel>>,
 
+    // -- Cursor-specific fields --
+    /// Human-readable display name (Cursor)
+    #[serde(default, rename = "displayName", skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+
+    /// Path to plugin logo image (Cursor)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
+
+    // -- Codex-specific fields --
+    /// Custom app directory path (Codex)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apps: Option<String>,
+
+    /// Plugin interface metadata for marketplace (Codex)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interface: Option<serde_json::Value>,
+
+    // -- OpenClaw-specific fields --
+    /// Plugin identifier (OpenClaw uses "id" instead of "name")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+
+    /// Config JSON Schema for validation (OpenClaw)
+    #[serde(default, rename = "configSchema", skip_serializing_if = "Option::is_none")]
+    pub config_schema: Option<serde_json::Value>,
+
+    /// Provider identifiers this plugin supplies (OpenClaw)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub providers: Option<Vec<String>>,
+
     // -- IR-specific fields (absent in Claude Code plugin.json) --
     /// IR schema version
     #[serde(default)]
@@ -484,6 +515,10 @@ pub struct AgentFrontmatter {
     /// Isolation mode — only valid value is "worktree"
     #[serde(default)]
     pub isolation: Option<String>,
+
+    /// Whether the agent is read-only (no write tools)
+    #[serde(default)]
+    pub readonly: Option<bool>,
 
     #[serde(default)]
     pub color: Option<String>,
