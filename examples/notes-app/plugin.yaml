@@ -1,0 +1,15 @@
+ir_version: "0.1"
+name: notes-app
+version: "1.0.0"
+description: "Full CRUD operations for macOS Notes.app via AppleScript"
+author: "Jon Willis"
+license: "MIT"
+keywords: [notes, macos, applescript, productivity]
+
+targets: [claude-code, opencode, codex]
+
+requires:
+  capabilities:
+    - skills
+  permissions:
+    - subprocess
