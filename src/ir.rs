@@ -36,6 +36,12 @@ pub struct PluginIR {
     /// Shared instructions from instructions/ directory
     pub instructions: Vec<InstructionDef>,
 
+    /// Output styles from output-styles/ directory
+    pub output_styles: Vec<OutputStyleDef>,
+
+    /// LSP server definitions
+    pub lsp_servers: Vec<LspServerDef>,
+
     /// Shared fragments from shared/ directory (for {% include %})
     pub shared: Vec<SharedFragment>,
 
@@ -85,6 +91,47 @@ pub struct PluginManifest {
     /// Plugin homepage URL
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
+
+    /// Source code repository URL
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository: Option<String>,
+
+    // -- Component path overrides (replace default directories) --
+    /// Custom command file/directory paths (replaces default commands/)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commands: Option<StringOrVec>,
+
+    /// Custom agent file/directory paths (replaces default agents/)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents: Option<StringOrVec>,
+
+    /// Custom skill directory paths (replaces default skills/)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<StringOrVec>,
+
+    /// Hook configuration — path(s) to JSON files or inline object
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hooks: Option<serde_json::Value>,
+
+    /// MCP server configuration — path(s) to JSON files or inline object
+    #[serde(default, rename = "mcpServers", skip_serializing_if = "Option::is_none")]
+    pub mcp_servers_config: Option<serde_json::Value>,
+
+    /// Output style file/directory paths
+    #[serde(default, rename = "outputStyles", skip_serializing_if = "Option::is_none")]
+    pub output_styles: Option<StringOrVec>,
+
+    /// LSP server configuration — path(s) to JSON files or inline object
+    #[serde(default, rename = "lspServers", skip_serializing_if = "Option::is_none")]
+    pub lsp_servers: Option<serde_json::Value>,
+
+    /// User-configurable values prompted at plugin enable time
+    #[serde(default, rename = "userConfig", skip_serializing_if = "Option::is_none")]
+    pub user_config: Option<BTreeMap<String, UserConfigEntry>>,
+
+    /// Channel declarations for message injection (Telegram, Slack, etc.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channels: Option<Vec<Channel>>,
 
     // -- IR-specific fields (absent in Claude Code plugin.json) --
     /// IR schema version
@@ -139,6 +186,34 @@ impl Default for Author {
     fn default() -> Self {
         Author::Name(String::new())
     }
+}
+
+// ---------------------------------------------------------------------------
+// User configuration
+// ---------------------------------------------------------------------------
+
+/// A user-configurable value declaration in plugin.json.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserConfigEntry {
+    /// Human-readable description shown when prompting the user
+    pub description: String,
+    /// If true, stored in system keychain rather than settings.json
+    #[serde(default)]
+    pub sensitive: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Channel
+// ---------------------------------------------------------------------------
+
+/// A message channel declaration that binds to an MCP server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Channel {
+    /// MCP server name this channel binds to (must match a key in mcpServers)
+    pub server: String,
+    /// Per-channel user configuration (e.g., bot tokens)
+    #[serde(default, rename = "userConfig", skip_serializing_if = "Option::is_none")]
+    pub user_config: Option<BTreeMap<String, UserConfigEntry>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -306,15 +381,25 @@ pub struct SkillDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct SkillFrontmatter {
+    /// Skill name override (defaults to filename stem)
+    #[serde(default)]
+    pub name: Option<String>,
+
     #[serde(default)]
     pub description: Option<String>,
 
     #[serde(default, rename = "argument-hint")]
     pub argument_hint: Option<StringOrVec>,
 
+    /// Allowed tools — some plugins use "allowed-tools", some use "tools"
     #[serde(default, rename = "allowed-tools")]
     pub allowed_tools: Option<StringOrVec>,
+
+    /// Allowed tools (alternate key used by some plugins)
+    #[serde(default)]
+    pub tools: Option<StringOrVec>,
 
     #[serde(default)]
     pub color: Option<String>,
@@ -322,9 +407,25 @@ pub struct SkillFrontmatter {
     #[serde(default)]
     pub examples: Option<Vec<String>>,
 
-    /// Catch-all for fields we don't model yet
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
+    /// Whether this skill can be invoked by users via /name
+    #[serde(default, rename = "user-invocable")]
+    pub user_invocable: Option<LenientBool>,
+
+    /// Whether to hide from the slash command tool list
+    #[serde(default, rename = "hide-from-slash-command-tool")]
+    pub hide_from_slash_command_tool: Option<LenientBool>,
+
+    /// Whether to disable automatic model invocation
+    #[serde(default, rename = "disable-model-invocation")]
+    pub disable_model_invocation: Option<LenientBool>,
+
+    /// Skill version
+    #[serde(default)]
+    pub version: Option<String>,
+
+    /// Skill license
+    #[serde(default)]
+    pub license: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -340,21 +441,52 @@ pub struct AgentDef {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct AgentFrontmatter {
+    /// Agent name override (defaults to filename stem)
+    #[serde(default)]
+    pub name: Option<String>,
+
     #[serde(default)]
     pub description: Option<String>,
 
     #[serde(default)]
     pub model: Option<String>,
 
-    #[serde(default, rename = "allowed-tools")]
-    pub allowed_tools: Option<StringOrVec>,
+    /// Effort level for the agent
+    #[serde(default)]
+    pub effort: Option<String>,
+
+    /// Maximum number of turns the agent can take
+    #[serde(default, rename = "maxTurns")]
+    pub max_turns: Option<u64>,
+
+    /// Allowed tools (replaces allowed-tools)
+    #[serde(default)]
+    pub tools: Option<StringOrVec>,
+
+    /// Tools the agent is not allowed to use
+    #[serde(default, rename = "disallowedTools")]
+    pub disallowed_tools: Option<StringOrVec>,
+
+    /// Skills available to this agent
+    #[serde(default)]
+    pub skills: Option<StringOrVec>,
+
+    /// Memory configuration
+    #[serde(default)]
+    pub memory: Option<serde_yaml::Value>,
+
+    /// Background execution configuration
+    #[serde(default)]
+    pub background: Option<serde_yaml::Value>,
+
+    /// Isolation mode — only valid value is "worktree"
+    #[serde(default)]
+    pub isolation: Option<String>,
 
     #[serde(default)]
     pub color: Option<String>,
-
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -367,21 +499,60 @@ pub struct HookDef {
     #[serde(skip)]
     pub source_path: PathBuf,
     pub event: HookEvent,
-    pub command: String,
+    /// Hook type: "command", "http", "prompt", or "agent"
+    #[serde(rename = "type", default = "default_hook_type")]
+    pub hook_type: String,
+    /// Shell command (for type: command)
+    #[serde(default)]
+    pub command: Option<String>,
+    /// URL (for type: http)
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Prompt template (for type: prompt)
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// Tool/event matcher pattern (e.g., "Write|Edit")
+    #[serde(default)]
+    pub matcher: Option<String>,
+    /// Timeout in milliseconds
     #[serde(default)]
     pub timeout: Option<u64>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
-/// Hook event types. Unknown events cause deserialization errors —
-/// a typo like "pre_tool_use" (underscore) is caught at parse time.
+fn default_hook_type() -> String {
+    "command".to_string()
+}
+
+/// All hook event types from the Claude Code spec.
+/// Unknown events cause deserialization errors — typos are caught at parse time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum HookEvent {
+    SessionStart,
+    UserPromptSubmit,
     PreToolUse,
+    PermissionRequest,
+    PermissionDenied,
     PostToolUse,
+    PostToolUseFailure,
+    Notification,
+    SubagentStart,
+    SubagentStop,
+    TaskCreated,
+    TaskCompleted,
     Stop,
+    StopFailure,
+    TeammateIdle,
+    InstructionsLoaded,
+    ConfigChange,
+    CwdChanged,
+    FileChanged,
+    WorktreeCreate,
+    WorktreeRemove,
+    PreCompact,
+    PostCompact,
+    Elicitation,
+    ElicitationResult,
+    SessionEnd,
 }
 
 // ---------------------------------------------------------------------------
@@ -398,8 +569,9 @@ pub struct McpServerDef {
     pub args: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, serde_yaml::Value>,
+    /// Working directory for the MCP server
+    #[serde(default)]
+    pub cwd: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +583,52 @@ pub struct InstructionDef {
     pub name: String,
     pub source_path: PathBuf,
     pub body: BodyContent,
+}
+
+// ---------------------------------------------------------------------------
+// Output style definition
+// ---------------------------------------------------------------------------
+
+/// An output style definition from output-styles/ directory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutputStyleDef {
+    pub name: String,
+    pub source_path: PathBuf,
+    pub body: BodyContent,
+}
+
+// ---------------------------------------------------------------------------
+// LSP server definition
+// ---------------------------------------------------------------------------
+
+/// An LSP server configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LspServerDef {
+    pub name: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Maps file extensions to language identifiers (required by spec)
+    #[serde(default, rename = "extensionToLanguage")]
+    pub extension_to_language: BTreeMap<String, String>,
+    #[serde(default)]
+    pub transport: Option<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    #[serde(default, rename = "initializationOptions")]
+    pub initialization_options: Option<serde_json::Value>,
+    #[serde(default)]
+    pub settings: Option<serde_json::Value>,
+    #[serde(default, rename = "workspaceFolder")]
+    pub workspace_folder: Option<String>,
+    #[serde(default, rename = "startupTimeout")]
+    pub startup_timeout: Option<u64>,
+    #[serde(default, rename = "shutdownTimeout")]
+    pub shutdown_timeout: Option<u64>,
+    #[serde(default, rename = "restartOnCrash")]
+    pub restart_on_crash: Option<bool>,
+    #[serde(default, rename = "maxRestarts")]
+    pub max_restarts: Option<u64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -532,6 +750,36 @@ pub struct VarDef {
 // ---------------------------------------------------------------------------
 // Utility types
 // ---------------------------------------------------------------------------
+
+/// A boolean that also accepts "true"/"false" strings (some real plugins use quoted bools).
+#[derive(Debug, Clone, Serialize)]
+pub struct LenientBool(pub bool);
+
+impl<'de> serde::Deserialize<'de> for LenientBool {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct Visitor;
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = LenientBool;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "a boolean or string \"true\"/\"false\"")
+            }
+            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<LenientBool, E> {
+                Ok(LenientBool(v))
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<LenientBool, E> {
+                match v {
+                    "true" => Ok(LenientBool(true)),
+                    "false" => Ok(LenientBool(false)),
+                    _ => Err(E::custom(format!("expected true/false, got {v:?}"))),
+                }
+            }
+        }
+        deserializer.deserialize_any(Visitor)
+    }
+}
 
 /// A field that can be either a single string or a list of strings.
 /// Claude Code frontmatter uses both forms for allowed-tools and argument-hint.

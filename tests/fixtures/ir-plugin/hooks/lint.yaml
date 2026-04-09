@@ -1,4 +1,5 @@
 name: lint-check
-event: pre-tool-use
+event: PreToolUse
+type: command
 command: "eslint --check"
 timeout: 5000

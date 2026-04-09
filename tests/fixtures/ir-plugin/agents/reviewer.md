@@ -1,7 +1,7 @@
 ---
 description: Code review agent
 model: sonnet
-allowed-tools:
+tools:
   - Read
   - Grep
   - Glob

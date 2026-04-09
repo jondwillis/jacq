@@ -28,6 +28,16 @@ fn ir_manifest(name: &str, targets: Vec<Target>) -> PluginManifest {
         license: Some("MIT".to_string()),
         keywords: vec!["test".to_string()],
         homepage: None,
+        repository: None,
+        commands: None,
+        agents: None,
+        skills: None,
+        hooks: None,
+        mcp_servers_config: None,
+        output_styles: None,
+        lsp_servers: None,
+        user_config: None,
+        channels: None,
         ir_version: Some("0.1".to_string()),
         targets,
         requires: None,
@@ -47,9 +57,7 @@ fn sample_skill() -> SkillDef {
                 "Grep".to_string(),
                 "Glob".to_string(),
             ])),
-            color: None,
-            examples: None,
-            extra: BTreeMap::new(),
+            ..SkillFrontmatter::default()
         },
         body: "Search for: $ARGUMENTS\n".into(),
     }
@@ -62,12 +70,11 @@ fn sample_agent() -> AgentDef {
         frontmatter: AgentFrontmatter {
             description: Some("Code review agent".to_string()),
             model: Some("sonnet".to_string()),
-            allowed_tools: Some(StringOrVec::Multiple(vec![
+            tools: Some(StringOrVec::Multiple(vec![
                 "Read".to_string(),
                 "Grep".to_string(),
             ])),
-            color: None,
-            extra: BTreeMap::new(),
+            ..AgentFrontmatter::default()
         },
         body: "Review the code for quality.\n".into(),
     }
@@ -80,7 +87,7 @@ fn sample_mcp() -> McpServerDef {
         command: "npx".to_string(),
         args: vec!["-y".to_string(), "@test/db-mcp".to_string()],
         env: BTreeMap::from([("DB_URL".to_string(), "postgres://localhost/test".to_string())]),
-        extra: BTreeMap::new(),
+        cwd: None,
     }
 }
 
@@ -100,6 +107,8 @@ fn build_ir(targets: Vec<Target>) -> PluginIR {
         hooks: vec![],
         mcp_servers: vec![sample_mcp()],
         instructions: vec![sample_instruction()],
+        output_styles: vec![],
+        lsp_servers: vec![],
         shared: vec![],
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),

@@ -77,14 +77,24 @@ fn frontmatter_matches(original: &str, emitted: &str) -> Result<(), String> {
     let orig_map = orig.as_mapping().unwrap_or(&empty);
     let emit_map = emit.as_mapping().unwrap_or(&empty);
 
-    // Every field in the original should be in the emitted output with the same value
+    // Every field in the original should be in the emitted output with the same value.
+    // Allow lenient bool comparison ("true" == true, "false" == false).
     for (key, orig_val) in orig_map {
         match emit_map.get(key) {
             Some(emit_val) if emit_val == orig_val => {}
             Some(emit_val) => {
-                return Err(format!(
-                    "field {key:?}: original={orig_val:?}, emitted={emit_val:?}"
-                ));
+                // Lenient: string "true"/"false" matches bool true/false
+                let is_lenient_bool_match = match (orig_val, emit_val) {
+                    (serde_yaml::Value::String(s), serde_yaml::Value::Bool(b)) => {
+                        (s == "true" && *b) || (s == "false" && !*b)
+                    }
+                    _ => false,
+                };
+                if !is_lenient_bool_match {
+                    return Err(format!(
+                        "field {key:?}: original={orig_val:?}, emitted={emit_val:?}"
+                    ));
+                }
             }
             None => {
                 return Err(format!("field {key:?} missing in emitted output"));

@@ -561,15 +561,13 @@ color: "#FFD700"
     }
 
     #[test]
-    fn unknown_fields_captured_in_extra() {
+    fn unknown_fields_rejected() {
         let yaml = r#"
 description: "test"
-custom-field: "preserved"
-another-field: 42
+custom-field: "should fail"
 "#;
-        let fm: SkillFrontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert!(fm.extra.contains_key("custom-field"));
-        assert!(fm.extra.contains_key("another-field"));
+        let result: Result<SkillFrontmatter, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err(), "unknown fields should be rejected");
     }
 
     #[test]
@@ -581,7 +579,6 @@ another-field: 42
         assert!(fm.allowed_tools.is_none());
         assert!(fm.color.is_none());
         assert!(fm.examples.is_none());
-        assert!(fm.extra.is_empty());
     }
 }
 
@@ -597,7 +594,7 @@ mod agent_frontmatter {
         let yaml = r#"
 description: "Code review agent"
 model: "sonnet"
-allowed-tools:
+tools:
   - Read
   - Grep
   - Glob
@@ -606,18 +603,18 @@ color: blue
         let fm: AgentFrontmatter = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(fm.description.as_deref(), Some("Code review agent"));
         assert_eq!(fm.model.as_deref(), Some("sonnet"));
-        assert!(fm.allowed_tools.is_some());
+        assert!(fm.tools.is_some());
         assert_eq!(fm.color.as_deref(), Some("blue"));
     }
 
     #[test]
-    fn agent_extra_fields_captured() {
+    fn agent_unknown_fields_rejected() {
         let yaml = r#"
 description: "test"
 custom-agent-field: true
 "#;
-        let fm: AgentFrontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert!(fm.extra.contains_key("custom-agent-field"));
+        let result: Result<AgentFrontmatter, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err(), "unknown agent fields should be rejected");
     }
 }
 
@@ -632,15 +629,15 @@ mod hook_def {
     fn parse_hook_def() {
         let yaml = r#"
 name: lint-check
-source_path: hooks/lint.yaml
-event: pre-tool-use
+event: PreToolUse
+type: command
 command: "eslint --check"
 timeout: 5000
 "#;
         let hook: HookDef = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(hook.name, "lint-check");
         assert_eq!(hook.event, HookEvent::PreToolUse);
-        assert_eq!(hook.command, "eslint --check");
+        assert_eq!(hook.command.as_deref(), Some("eslint --check"));
         assert_eq!(hook.timeout, Some(5000));
     }
 
@@ -648,8 +645,7 @@ timeout: 5000
     fn hook_without_timeout() {
         let yaml = r#"
 name: simple
-source_path: hooks/simple.yaml
-event: stop
+event: Stop
 command: "echo done"
 "#;
         let hook: HookDef = serde_yaml::from_str(yaml).unwrap();
@@ -660,9 +656,13 @@ command: "echo done"
     #[test]
     fn known_events() {
         let cases = [
-            ("pre-tool-use", HookEvent::PreToolUse),
-            ("post-tool-use", HookEvent::PostToolUse),
-            ("stop", HookEvent::Stop),
+            ("PreToolUse", HookEvent::PreToolUse),
+            ("PostToolUse", HookEvent::PostToolUse),
+            ("Stop", HookEvent::Stop),
+            ("SessionStart", HookEvent::SessionStart),
+            ("UserPromptSubmit", HookEvent::UserPromptSubmit),
+            ("FileChanged", HookEvent::FileChanged),
+            ("SessionEnd", HookEvent::SessionEnd),
         ];
         for (input, expected) in cases {
             let parsed: HookEvent = serde_yaml::from_str(&format!("\"{input}\"")).unwrap();
@@ -672,7 +672,7 @@ command: "echo done"
 
     #[test]
     fn unknown_event_is_rejected() {
-        let result: Result<HookEvent, _> = serde_yaml::from_str("\"on-session-start\"");
+        let result: Result<HookEvent, _> = serde_yaml::from_str("\"OnSessionStart\"");
         assert!(result.is_err(), "unknown event should fail deserialization");
     }
 }
@@ -736,6 +736,16 @@ mod plugin_ir {
                 license: None,
                 keywords: vec![],
                 homepage: None,
+                repository: None,
+                commands: None,
+                agents: None,
+                skills: None,
+                hooks: None,
+                mcp_servers_config: None,
+                output_styles: None,
+                lsp_servers: None,
+                user_config: None,
+                channels: None,
                 ir_version: None,
                 targets: vec![],
                 requires: None,
@@ -747,6 +757,8 @@ mod plugin_ir {
             hooks: vec![],
             mcp_servers: vec![],
             instructions: vec![],
+            output_styles: vec![],
+            lsp_servers: vec![],
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: PathBuf::from("/tmp/test"),
@@ -767,6 +779,16 @@ mod plugin_ir {
                 license: None,
                 keywords: vec![],
                 homepage: None,
+                repository: None,
+                commands: None,
+                agents: None,
+                skills: None,
+                hooks: None,
+                mcp_servers_config: None,
+                output_styles: None,
+                lsp_servers: None,
+                user_config: None,
+                channels: None,
                 ir_version: None,
                 targets: vec![],
                 requires: None,
@@ -778,6 +800,8 @@ mod plugin_ir {
             hooks: vec![],
             mcp_servers: vec![],
             instructions: vec![],
+            output_styles: vec![],
+            lsp_servers: vec![],
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: PathBuf::from("/secret/path"),

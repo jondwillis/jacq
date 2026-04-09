@@ -222,54 +222,45 @@ fn yaml_value(v: &impl serde::Serialize) -> Result<serde_yaml::Value> {
 }
 
 fn render_skill_md(skill: &SkillDef, engine: &RenderEngine) -> Result<String> {
-    let mut fm = BTreeMap::new();
+    let fm = &skill.frontmatter;
+    let mut out = BTreeMap::new();
 
-    if let Some(desc) = &skill.frontmatter.description {
-        fm.insert("description", yaml_value(desc)?);
-    }
-    if let Some(hint) = &skill.frontmatter.argument_hint {
-        fm.insert("argument-hint", yaml_value(hint)?);
-    }
-    if let Some(tools) = &skill.frontmatter.allowed_tools {
-        fm.insert("allowed-tools", yaml_value(tools)?);
-    }
-    if let Some(color) = &skill.frontmatter.color {
-        fm.insert("color", yaml_value(color)?);
-    }
-    if let Some(examples) = &skill.frontmatter.examples {
-        fm.insert("examples", yaml_value(examples)?);
-    }
-
-    for (k, v) in &skill.frontmatter.extra {
-        fm.insert(k.as_str(), v.clone());
-    }
+    if let Some(v) = &fm.name { out.insert("name", yaml_value(v)?); }
+    if let Some(v) = &fm.description { out.insert("description", yaml_value(v)?); }
+    if let Some(v) = &fm.argument_hint { out.insert("argument-hint", yaml_value(v)?); }
+    if let Some(v) = &fm.allowed_tools { out.insert("allowed-tools", yaml_value(v)?); }
+    if let Some(v) = &fm.tools { out.insert("tools", yaml_value(v)?); }
+    if let Some(v) = &fm.color { out.insert("color", yaml_value(v)?); }
+    if let Some(v) = &fm.examples { out.insert("examples", yaml_value(v)?); }
+    if let Some(v) = &fm.user_invocable { out.insert("user-invocable", yaml_value(v)?); }
+    if let Some(v) = &fm.hide_from_slash_command_tool { out.insert("hide-from-slash-command-tool", yaml_value(v)?); }
+    if let Some(v) = &fm.disable_model_invocation { out.insert("disable-model-invocation", yaml_value(v)?); }
+    if let Some(v) = &fm.version { out.insert("version", yaml_value(v)?); }
+    if let Some(v) = &fm.license { out.insert("license", yaml_value(v)?); }
 
     let rendered_body = engine.render(&skill.body)?;
-    wrap_frontmatter(fm, &rendered_body)
+    wrap_frontmatter(out, &rendered_body)
 }
 
 fn render_agent_md(agent: &AgentDef, engine: &RenderEngine) -> Result<String> {
-    let mut fm = BTreeMap::new();
+    let fm = &agent.frontmatter;
+    let mut out = BTreeMap::new();
 
-    if let Some(desc) = &agent.frontmatter.description {
-        fm.insert("description", yaml_value(desc)?);
-    }
-    if let Some(model) = &agent.frontmatter.model {
-        fm.insert("model", yaml_value(model)?);
-    }
-    if let Some(tools) = &agent.frontmatter.allowed_tools {
-        fm.insert("allowed-tools", yaml_value(tools)?);
-    }
-    if let Some(color) = &agent.frontmatter.color {
-        fm.insert("color", yaml_value(color)?);
-    }
-
-    for (k, v) in &agent.frontmatter.extra {
-        fm.insert(k.as_str(), v.clone());
-    }
+    if let Some(v) = &fm.name { out.insert("name", yaml_value(v)?); }
+    if let Some(v) = &fm.description { out.insert("description", yaml_value(v)?); }
+    if let Some(v) = &fm.model { out.insert("model", yaml_value(v)?); }
+    if let Some(v) = &fm.effort { out.insert("effort", yaml_value(v)?); }
+    if let Some(v) = &fm.max_turns { out.insert("maxTurns", yaml_value(v)?); }
+    if let Some(v) = &fm.tools { out.insert("tools", yaml_value(v)?); }
+    if let Some(v) = &fm.disallowed_tools { out.insert("disallowedTools", yaml_value(v)?); }
+    if let Some(v) = &fm.skills { out.insert("skills", yaml_value(v)?); }
+    if let Some(v) = &fm.memory { out.insert("memory", yaml_value(v)?); }
+    if let Some(v) = &fm.background { out.insert("background", yaml_value(v)?); }
+    if let Some(v) = &fm.isolation { out.insert("isolation", yaml_value(v)?); }
+    if let Some(v) = &fm.color { out.insert("color", yaml_value(v)?); }
 
     let rendered_body = engine.render(&agent.body)?;
-    wrap_frontmatter(fm, &rendered_body)
+    wrap_frontmatter(out, &rendered_body)
 }
 
 fn wrap_frontmatter(frontmatter: BTreeMap<&str, serde_yaml::Value>, body: &str) -> Result<String> {

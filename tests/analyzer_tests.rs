@@ -23,6 +23,16 @@ fn minimal_manifest(name: &str, targets: Vec<Target>) -> PluginManifest {
         license: None,
         keywords: vec![],
         homepage: None,
+        repository: None,
+        commands: None,
+        agents: None,
+        skills: None,
+        hooks: None,
+        mcp_servers_config: None,
+        output_styles: None,
+        lsp_servers: None,
+        user_config: None,
+        channels: None,
         ir_version: Some("0.1".to_string()),
         targets,
         requires: None,
@@ -39,6 +49,8 @@ fn empty_ir(manifest: PluginManifest) -> PluginIR {
         hooks: vec![],
         mcp_servers: vec![],
         instructions: vec![],
+        output_styles: vec![],
+        lsp_servers: vec![],
         shared: vec![],
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),
@@ -68,9 +80,12 @@ fn hook(name: &str, event: HookEvent) -> HookDef {
         name: name.to_string(),
         source_path: PathBuf::from(format!("hooks/{name}.yaml")),
         event,
-        command: "test".to_string(),
+        hook_type: "command".to_string(),
+        command: Some("test".to_string()),
+        url: None,
+        prompt: None,
+        matcher: None,
         timeout: None,
-        extra: BTreeMap::new(),
     }
 }
 
@@ -81,7 +96,7 @@ fn mcp_server(name: &str) -> McpServerDef {
         command: "npx".to_string(),
         args: vec![],
         env: BTreeMap::new(),
-        extra: BTreeMap::new(),
+        cwd: None,
     }
 }
 

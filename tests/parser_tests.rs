@@ -147,7 +147,7 @@ mod ir_format {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
         assert_eq!(ir.hooks.len(), 1);
         assert_eq!(ir.hooks[0].name, "lint-check");
-        assert_eq!(ir.hooks[0].command, "eslint --check");
+        assert_eq!(ir.hooks[0].command.as_deref(), Some("eslint --check"));
         assert_eq!(ir.hooks[0].timeout, Some(5000));
     }
 

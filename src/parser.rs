@@ -43,6 +43,8 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
     let shared = parse_shared_files(&dir)?;
     let target_overrides = parse_target_overrides(&dir, &manifest)?;
 
+    let output_styles = parse_output_style_files(&dir)?;
+
     Ok(PluginIR {
         manifest,
         skills: all_skills,
@@ -50,6 +52,8 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         hooks,
         mcp_servers,
         instructions,
+        output_styles,
+        lsp_servers: vec![], // TODO: parse from .lsp.json
         shared,
         target_overrides,
         source_dir: dir,
@@ -406,6 +410,36 @@ fn parse_instruction_files(dir: &Path) -> Result<Vec<InstructionDef>> {
 
     instructions.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(instructions)
+}
+
+// ---------------------------------------------------------------------------
+// Output style parsing (.md files, body only)
+// ---------------------------------------------------------------------------
+
+fn parse_output_style_files(dir: &Path) -> Result<Vec<OutputStyleDef>> {
+    let styles_dir = dir.join("output-styles");
+    if !styles_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let entries = walk_files(&styles_dir, 1, &["md"])?;
+    let mut styles = Vec::new();
+
+    for entry in entries {
+        let path = entry.path();
+        let content = read_file(path)?;
+        let name = file_stem_or_err(path)?;
+        let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
+
+        styles.push(OutputStyleDef {
+            name,
+            source_path: rel_path,
+            body: content.into(),
+        });
+    }
+
+    styles.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(styles)
 }
 
 // ---------------------------------------------------------------------------
