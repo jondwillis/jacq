@@ -38,6 +38,7 @@ fn empty_ir(manifest: PluginManifest) -> PluginIR {
         hooks: vec![],
         mcp_servers: vec![],
         instructions: vec![],
+        shared: vec![],
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),
     }

@@ -173,6 +173,16 @@ mod ir_format {
     }
 
     #[test]
+    fn discovers_shared_fragments() {
+        let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
+        assert_eq!(ir.shared.len(), 2);
+        let names: Vec<&str> = ir.shared.iter().map(|f| f.name.as_str()).collect();
+        assert!(names.contains(&"common-rules"));
+        assert!(names.contains(&"error-handling"));
+        assert!(ir.shared[0].body.as_raw().contains("Common Rules") || ir.shared[1].body.as_raw().contains("Common Rules"));
+    }
+
+    #[test]
     fn discovers_target_overrides() {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
         assert!(ir.target_overrides.contains_key(&Target::OpenCode));

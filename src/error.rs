@@ -91,6 +91,16 @@ pub enum JacqError {
         name: String,
         target: Target,
     },
+
+    #[error("Missing shared fragment '{name}' included in {}", path.display())]
+    #[diagnostic(
+        code(jacq::missing_include),
+        help("Create shared/{name}.md or check the include name")
+    )]
+    MissingInclude {
+        name: String,
+        path: PathBuf,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, JacqError>;

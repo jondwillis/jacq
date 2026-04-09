@@ -36,6 +36,9 @@ pub struct PluginIR {
     /// Shared instructions from instructions/ directory
     pub instructions: Vec<InstructionDef>,
 
+    /// Shared fragments from shared/ directory (for {% include %})
+    pub shared: Vec<SharedFragment>,
+
     /// Per-target override files from targets/ directory
     pub target_overrides: BTreeMap<Target, Vec<TargetOverride>>,
 
@@ -395,6 +398,22 @@ pub struct InstructionDef {
 }
 
 // ---------------------------------------------------------------------------
+// Shared fragment definition
+// ---------------------------------------------------------------------------
+
+/// A reusable content fragment from the shared/ directory.
+/// Can be included in skills/agents/instructions via `{% include "name" %}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SharedFragment {
+    /// Fragment name (filename stem, e.g. "error-handling")
+    pub name: String,
+    /// Relative path from plugin root
+    pub source_path: PathBuf,
+    /// Fragment content — may itself contain {{variables}}
+    pub body: BodyContent,
+}
+
+// ---------------------------------------------------------------------------
 // Target overrides
 // ---------------------------------------------------------------------------
 
@@ -420,7 +439,7 @@ pub enum BodyContent {
     Template(TemplateBody),
 }
 
-/// A body that contains `{{variable}}` template references.
+/// A body that contains `{{variable}}` references or `{% include %}` directives.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplateBody {
     /// The raw template string (before variable substitution)
@@ -428,6 +447,9 @@ pub struct TemplateBody {
     /// Extracted variable references with byte-offset spans
     #[serde(skip)]
     pub variables: Vec<VariableRef>,
+    /// Names of included shared fragments (e.g. "error-handling" from `{% include "error-handling" %}`)
+    #[serde(skip)]
+    pub includes: Vec<String>,
 }
 
 /// A reference to a `{{variable}}` in a template body.

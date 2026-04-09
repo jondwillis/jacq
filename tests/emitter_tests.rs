@@ -98,6 +98,7 @@ fn build_ir(targets: Vec<Target>) -> PluginIR {
         hooks: vec![],
         mcp_servers: vec![sample_mcp()],
         instructions: vec![sample_instruction()],
+        shared: vec![],
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),
     }

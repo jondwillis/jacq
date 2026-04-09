@@ -136,14 +136,20 @@ fn cmd_validate(
         }
         return Err(format!("{} template error(s)", template_errors.len()).into());
     }
+    let shared_info = if ir.shared.is_empty() {
+        String::new()
+    } else {
+        format!(", {} shared fragment(s)", ir.shared.len())
+    };
     println!(
-        "Parsed '{}' v{} ({} skill(s), {} agent(s), {} hook(s), {} MCP server(s))",
+        "Parsed '{}' v{} ({} skill(s), {} agent(s), {} hook(s), {} MCP server(s){})",
         ir.manifest.name,
         ir.manifest.version,
         ir.skills.len(),
         ir.agents.len(),
         ir.hooks.len(),
         ir.mcp_servers.len(),
+        shared_info,
     );
 
     let report = analyzer::analyze(&ir);
@@ -273,6 +279,13 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
             "  MCP servers:  {}  ({})",
             ir.mcp_servers.len(),
             ir.mcp_servers.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
+        );
+    }
+    if !ir.shared.is_empty() {
+        println!(
+            "  Shared:       {}  ({})",
+            ir.shared.len(),
+            ir.shared.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ")
         );
     }
     if !ir.instructions.is_empty() {

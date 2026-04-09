@@ -10,7 +10,7 @@ use std::path::Path;
 use crate::error::{JacqError, Result};
 use crate::ir::*;
 use crate::targets::Target;
-use crate::template;
+use crate::template::RenderEngine;
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -25,12 +25,14 @@ pub fn emit(ir: &PluginIR, output_dir: &Path) -> Result<()> {
             source: e,
         })?;
 
+        let engine = RenderEngine::new(&ir.manifest.vars, &ir.shared, *target)?;
+
         match target {
-            Target::ClaudeCode => emit_claude_code(ir, &target_dir, *target)?,
-            Target::OpenCode => emit_opencode(ir, &target_dir, *target)?,
-            Target::Codex => emit_codex(ir, &target_dir, *target)?,
-            Target::Cursor => emit_cursor(ir, &target_dir, *target)?,
-            Target::OpenClaw => emit_openclaw(ir, &target_dir, *target)?,
+            Target::ClaudeCode => emit_claude_code(ir, &engine, &target_dir)?,
+            Target::OpenCode => emit_opencode(ir, &engine, &target_dir)?,
+            Target::Codex => emit_codex(ir, &engine, &target_dir)?,
+            Target::Cursor => emit_cursor(ir, &engine, &target_dir)?,
+            Target::OpenClaw => emit_openclaw(ir, &engine, &target_dir)?,
         }
     }
     Ok(())
@@ -40,7 +42,7 @@ pub fn emit(ir: &PluginIR, output_dir: &Path) -> Result<()> {
 // Claude Code emitter — identity/passthrough
 // ---------------------------------------------------------------------------
 
-fn emit_claude_code(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
+fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
     // plugin.json — core manifest
     let plugin_json = serde_json::json!({
         "name": ir.manifest.name,
@@ -67,7 +69,7 @@ fn emit_claude_code(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
         let commands_dir = dir.join("commands");
         create_dir(&commands_dir)?;
         for skill in &ir.skills {
-            let content = render_skill_md(skill, &ir.manifest.vars, target)?;
+            let content = render_skill_md(skill, engine)?;
             write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
         }
     }
@@ -77,7 +79,7 @@ fn emit_claude_code(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
         let agents_dir = dir.join("agents");
         create_dir(&agents_dir)?;
         for agent in &ir.agents {
-            let content = render_agent_md(agent, &ir.manifest.vars, target)?;
+            let content = render_agent_md(agent, engine)?;
             write_file(&agents_dir.join(format!("{}.md", agent.name)), &content)?;
         }
     }
@@ -102,7 +104,7 @@ fn emit_claude_code(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
 
     // CLAUDE.md — instructions
     if !ir.instructions.is_empty() {
-        let content = render_instructions(&ir.instructions, &ir.manifest.vars, target)?;
+        let content = render_instructions(&ir.instructions, engine)?;
         write_file(&dir.join("CLAUDE.md"), &content)?;
     }
 
@@ -113,7 +115,7 @@ fn emit_claude_code(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
 // OpenCode emitter
 // ---------------------------------------------------------------------------
 
-fn emit_opencode(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
+fn emit_opencode(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
     // package.json — npm-style manifest
     let package_json = serde_json::json!({
         "name": ir.manifest.name,
@@ -125,7 +127,7 @@ fn emit_opencode(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
     write_json(dir, "package.json", &package_json)?;
 
     // AGENTS.md — combined instructions, skill docs, and agent descriptions
-    let agents_md = render_agents_md(ir, true, target)?;
+    let agents_md = render_agents_md(ir, true, engine)?;
     write_file(&dir.join("AGENTS.md"), &agents_md)?;
 
     Ok(())
@@ -135,7 +137,7 @@ fn emit_opencode(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
 // Codex emitter
 // ---------------------------------------------------------------------------
 
-fn emit_codex(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
+fn emit_codex(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
     // plugin.json — Codex-flavored manifest
     let plugin_json = serde_json::json!({
         "name": ir.manifest.name,
@@ -150,13 +152,13 @@ fn emit_codex(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
         let skills_dir = dir.join("skills");
         create_dir(&skills_dir)?;
         for skill in &ir.skills {
-            let content = render_skill_md(skill, &ir.manifest.vars, target)?;
+            let content = render_skill_md(skill, engine)?;
             write_file(&skills_dir.join(format!("{}.md", skill.name)), &content)?;
         }
     }
 
     // AGENTS.md — instructions and agent descriptions (NOT skills — they're in skill files)
-    let agents_md = render_agents_md(ir, false, target)?;
+    let agents_md = render_agents_md(ir, false, engine)?;
     write_file(&dir.join("AGENTS.md"), &agents_md)?;
 
     Ok(())
@@ -166,9 +168,9 @@ fn emit_codex(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
 // Cursor emitter (minimal — rules + MCP)
 // ---------------------------------------------------------------------------
 
-fn emit_cursor(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
+fn emit_cursor(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
     if !ir.instructions.is_empty() {
-        let content = render_instructions(&ir.instructions, &ir.manifest.vars, target)?;
+        let content = render_instructions(&ir.instructions, engine)?;
         write_file(&dir.join(".cursorrules"), &content)?;
     }
 
@@ -186,7 +188,7 @@ fn emit_cursor(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
 // OpenClaw emitter (minimal — npm package + instructions)
 // ---------------------------------------------------------------------------
 
-fn emit_openclaw(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
+fn emit_openclaw(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
     let package_json = serde_json::json!({
         "name": ir.manifest.name,
         "version": ir.manifest.version,
@@ -198,7 +200,7 @@ fn emit_openclaw(ir: &PluginIR, dir: &Path, target: Target) -> Result<()> {
     write_json(dir, "package.json", &package_json)?;
 
     if !ir.instructions.is_empty() {
-        let content = render_instructions(&ir.instructions, &ir.manifest.vars, target)?;
+        let content = render_instructions(&ir.instructions, engine)?;
         write_file(&dir.join("README.md"), &content)?;
     }
 
@@ -215,7 +217,7 @@ fn yaml_value(v: &impl serde::Serialize) -> Result<serde_yaml::Value> {
     })
 }
 
-fn render_skill_md(skill: &SkillDef, vars: &BTreeMap<String, VarDef>, target: Target) -> Result<String> {
+fn render_skill_md(skill: &SkillDef, engine: &RenderEngine) -> Result<String> {
     let mut fm = BTreeMap::new();
 
     if let Some(desc) = &skill.frontmatter.description {
@@ -238,11 +240,11 @@ fn render_skill_md(skill: &SkillDef, vars: &BTreeMap<String, VarDef>, target: Ta
         fm.insert(k.as_str(), v.clone());
     }
 
-    let rendered_body = template::render(&skill.body, vars, target)?;
+    let rendered_body = engine.render(&skill.body)?;
     wrap_frontmatter(fm, &rendered_body)
 }
 
-fn render_agent_md(agent: &AgentDef, vars: &BTreeMap<String, VarDef>, target: Target) -> Result<String> {
+fn render_agent_md(agent: &AgentDef, engine: &RenderEngine) -> Result<String> {
     let mut fm = BTreeMap::new();
 
     if let Some(desc) = &agent.frontmatter.description {
@@ -262,7 +264,7 @@ fn render_agent_md(agent: &AgentDef, vars: &BTreeMap<String, VarDef>, target: Ta
         fm.insert(k.as_str(), v.clone());
     }
 
-    let rendered_body = template::render(&agent.body, vars, target)?;
+    let rendered_body = engine.render(&agent.body)?;
     wrap_frontmatter(fm, &rendered_body)
 }
 
@@ -302,14 +304,10 @@ fn render_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
 }
 
 /// Render instructions with blank-line separation between files.
-fn render_instructions(
-    instructions: &[InstructionDef],
-    vars: &BTreeMap<String, VarDef>,
-    target: Target,
-) -> Result<String> {
+fn render_instructions(instructions: &[InstructionDef], engine: &RenderEngine) -> Result<String> {
     let mut rendered = Vec::new();
     for instr in instructions {
-        rendered.push(template::render(&instr.body, vars, target)?);
+        rendered.push(engine.render(&instr.body)?);
     }
     Ok(rendered.join("\n\n"))
 }
@@ -317,12 +315,11 @@ fn render_instructions(
 /// Render AGENTS.md — used by OpenCode and Codex.
 /// `include_skills`: if true, document skills in AGENTS.md (OpenCode).
 /// If false, skip skills (Codex emits them as native skill files).
-fn render_agents_md(ir: &PluginIR, include_skills: bool, target: Target) -> Result<String> {
-    let vars = &ir.manifest.vars;
+fn render_agents_md(ir: &PluginIR, include_skills: bool, engine: &RenderEngine) -> Result<String> {
     let mut sections = Vec::new();
 
     if !ir.instructions.is_empty() {
-        sections.push(render_instructions(&ir.instructions, vars, target)?);
+        sections.push(render_instructions(&ir.instructions, engine)?);
     }
 
     if include_skills && !ir.skills.is_empty() {
@@ -332,7 +329,7 @@ fn render_agents_md(ir: &PluginIR, include_skills: bool, target: Target) -> Resu
             if let Some(desc) = &skill.frontmatter.description {
                 skill_section.push_str(&format!("{desc}\n\n"));
             }
-            skill_section.push_str(&template::render(&skill.body, vars, target)?);
+            skill_section.push_str(&engine.render(&skill.body)?);
             skill_section.push('\n');
         }
         sections.push(skill_section);
@@ -345,7 +342,7 @@ fn render_agents_md(ir: &PluginIR, include_skills: bool, target: Target) -> Resu
             if let Some(desc) = &agent.frontmatter.description {
                 agent_section.push_str(&format!("{desc}\n\n"));
             }
-            agent_section.push_str(&template::render(&agent.body, vars, target)?);
+            agent_section.push_str(&engine.render(&agent.body)?);
             agent_section.push('\n');
         }
         sections.push(agent_section);

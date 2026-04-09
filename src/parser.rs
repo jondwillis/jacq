@@ -40,6 +40,7 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
     let hooks = parse_hook_files(&dir)?;
     let mcp_servers = parse_mcp_files(&dir)?;
     let instructions = parse_instruction_files(&dir)?;
+    let shared = parse_shared_files(&dir)?;
     let target_overrides = parse_target_overrides(&dir, &manifest)?;
 
     Ok(PluginIR {
@@ -49,6 +50,7 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         hooks,
         mcp_servers,
         instructions,
+        shared,
         target_overrides,
         source_dir: dir,
     })
@@ -364,6 +366,36 @@ fn parse_instruction_files(dir: &Path) -> Result<Vec<InstructionDef>> {
 
     instructions.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(instructions)
+}
+
+// ---------------------------------------------------------------------------
+// Shared fragment parsing (.md files, body only — same pattern as instructions)
+// ---------------------------------------------------------------------------
+
+fn parse_shared_files(dir: &Path) -> Result<Vec<SharedFragment>> {
+    let shared_dir = dir.join("shared");
+    if !shared_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let entries = walk_files(&shared_dir, 1, &["md"])?;
+    let mut fragments = Vec::new();
+
+    for entry in entries {
+        let path = entry.path();
+        let content = read_file(path)?;
+        let name = file_stem_or_err(path)?;
+        let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
+
+        fragments.push(SharedFragment {
+            name,
+            source_path: rel_path,
+            body: content.into(),
+        });
+    }
+
+    fragments.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(fragments)
 }
 
 // ---------------------------------------------------------------------------
