@@ -637,4 +637,52 @@ Claude Code has a rich plugin system with native support for discrete skills (fr
 
 ---
 
-*This guide grows with each phase. Phase 5 (CLI Wiring) will connect parse → analyze → emit into the CLI commands.*
+## Phase 5: CLI Wiring
+
+### What This Phase Does
+
+Connects the pipeline stages (parse → analyze → emit) into working CLI commands. After Phase 5, `jacq` is a functional tool:
+
+- `jacq init my-plugin` — scaffold a new IR plugin
+- `jacq init my-plugin --from ./existing` — import a Claude Code plugin
+- `jacq validate ./my-plugin` — parse + analyze, report issues
+- `jacq build ./my-plugin` — parse + analyze + emit to `dist/`
+- `jacq build ./my-plugin --target opencode` — build for one target
+- `jacq inspect ./my-plugin` — show capability matrix and compatibility
+- `jacq test ./my-plugin` — alias for validate (schema validation later)
+
+### Key Design Decision: Subprocess Tests
+
+The CLI tests use `std::process::Command` to run `jacq` as a real subprocess:
+
+```rust
+fn jacq() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_jacq"))
+}
+```
+
+`CARGO_BIN_EXE_jacq` is a Cargo-provided environment variable that points to the compiled binary. This tests the real CLI — argument parsing, exit codes, stdout/stderr — not just the library functions. The emitter and analyzer tests cover the library; the CLI tests cover the user-facing behavior.
+
+### Quiz: Phase 5
+
+### Q1: Why Subprocess Tests?
+The analyzer and emitter tests call library functions directly. Why do CLI tests run jacq as a subprocess instead?
+
+<details>
+<summary>Answer</summary>
+
+Library tests verify correctness of individual stages. CLI tests verify the user experience: Does `--target claude-code` actually filter? Does a missing manifest produce a non-zero exit code? Does `--from` import correctly? These behaviors involve clap argument parsing, exit code handling, and stdout/stderr output — none of which are exercised by calling library functions. A bug in main.rs (e.g., forgetting to pass `strict` to the emitter) would only be caught by subprocess tests.
+</details>
+
+### Q2: Exit Codes
+`jacq validate` on an empty directory returns exit code 1. Why not use specific exit codes for different failure types?
+
+<details>
+<summary>Answer</summary>
+
+For v0.1, binary pass/fail is sufficient. The diagnostic output tells the user what went wrong. Specific exit codes (e.g., 2 for parse errors, 3 for analysis failures) are useful for scripting (`if jacq validate; then jacq build; fi`), but the simpler contract (0 = success, 1 = failure) is correct and adequate. Exit code semantics can be added later without breaking existing usage.
+</details>
+
+---
+
+*This guide grows with each phase. Phase 6 (Dogfooding) will test jacq against real plugins.*
