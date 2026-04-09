@@ -403,4 +403,136 @@ The function finds the *first* `\n---` after the opening delimiter, so a `---` h
 
 ---
 
-*This guide grows with each phase. Phase 3 (Analyzer) will cover capability comparison, compatibility reporting, and fallback resolution.*
+## Phase 3: Analyzer
+
+### What the Analyzer Does
+
+The analyzer sits between the parser and the emitters. It takes a `PluginIR` and answers: "Can this plugin compile for each declared target?" It produces an `AnalysisReport` with three severity levels:
+
+- **Error** — capability not supported, no fallback declared. Build will fail.
+- **Warning** — capability has partial/flags support, no fallback. Build succeeds but output may differ.
+- **Info** — a fallback strategy is handling the gap. Build succeeds with noted degradation.
+
+### Key Design Decisions
+
+#### 1. Capability Inference (Don't Trust Declarations Alone)
+
+The plan's `requires.capabilities` field lets authors declare what they need. But the analyzer also **infers** capabilities from the plugin's actual content:
+
+- Has `skills/*.md` files → needs `skills`
+- Has hooks with `event: pre-tool-use` → needs `hooks.pre-tool-use`
+- Has `mcp/*.yaml` files → needs `mcp-servers`
+
+This inference is the safety net. Even if the author forgets to declare capabilities in `requires`, the analyzer catches incompatibilities by looking at what the plugin actually contains.
+
+#### 2. Specific Over Parent Capabilities
+
+A hook with `event: pre-tool-use` infers `hooks.pre-tool-use`, NOT the parent `hooks`. TDD caught this: when we inferred both, a fallback declared for `hooks.pre-tool-use` wouldn't cover the parent `hooks`, causing false errors.
+
+The principle: **infer at the most specific level that the target matrix supports**. The capability matrices have entries for both `hooks` and `hooks.pre-tool-use`, but the specific entry is what matters for checking and fallback resolution.
+
+#### 3. Fallback Resolution as Severity Downgrade
+
+Without fallback: unsupported capability → Error.
+With fallback: unsupported capability → Info (with description of what will happen).
+
+This is not "hiding" the problem — the diagnostic still appears. The severity change means the build succeeds and the report explains exactly what degradation will occur. The emitters will use the fallback strategy to generate appropriate output.
+
+#### 4. Pure Function Over Data
+
+```rust
+pub fn analyze(ir: &PluginIR) -> AnalysisReport
+```
+
+The analyzer is a pure function: `PluginIR` in, `AnalysisReport` out. No filesystem access, no side effects. This makes it trivially testable — every test constructs a `PluginIR` in memory and asserts on the report.
+
+### Rust Patterns Used in Phase 3
+
+#### 1. `BTreeSet` for Ordered Inferred Capabilities
+
+```rust
+fn infer_capabilities(ir: &PluginIR) -> BTreeSet<String> {
+```
+
+`BTreeSet` (not `HashSet`) for the same reason as `BTreeMap` everywhere: deterministic iteration order. When iterating over inferred capabilities to check against matrices, the order of diagnostics in the report is stable.
+
+#### 2. Tuple Pattern Matching for Decision Matrix
+
+```rust
+match (support, fallback) {
+    (SupportLevel::Full, _) => {}
+    (SupportLevel::None, Some(fb)) => { /* info */ }
+    (SupportLevel::None, None) => { /* error */ }
+    (SupportLevel::Partial | SupportLevel::Flags, Some(fb)) => { /* info */ }
+    (SupportLevel::Partial | SupportLevel::Flags, None) => { /* warning */ }
+}
+```
+
+Matching on a tuple of `(SupportLevel, Option<&FallbackStrategy>)` turns the decision matrix into an exhaustive pattern match. The compiler guarantees all combinations are handled. If `SupportLevel` gains a new variant, this match will fail to compile — forcing us to decide what happens.
+
+#### 3. Iterator Combinators for Report Queries
+
+```rust
+pub fn errors(&self) -> impl Iterator<Item = &Diagnostic> {
+    self.diagnostics.iter().filter(|d| d.severity == Severity::Error)
+}
+
+pub fn for_target(&self, target: Target) -> impl Iterator<Item = &Diagnostic> {
+    self.diagnostics.iter().filter(move |d| d.target == target)
+}
+```
+
+The `move` keyword on the closure in `for_target` is necessary because the closure captures `target` by value. Without `move`, the closure would borrow `target` — but `target` is a function parameter that's dropped when the function returns, while the iterator lives longer. `move` transfers ownership of `target` (which is `Copy`) into the closure.
+
+---
+
+### Quiz: Phase 3
+
+### Q1: Why Infer Instead of Only Declaring?
+The manifest has a `requires.capabilities` field. Why does the analyzer also infer capabilities from the plugin content?
+
+<details>
+<summary>Answer</summary>
+
+Two reasons: (1) **Safety net** — if the author forgets to declare a capability, the analyzer still catches incompatibilities. A plugin with hooks that doesn't declare `hooks` in `requires` would silently compile with missing hooks on Cursor if we only checked declarations. (2) **Claude Code native plugins** — they have no `requires` field at all (it's an IR extension). The analyzer must infer everything from content to analyze these plugins.
+</details>
+
+### Q2: The TDD Catch
+The first implementation inferred both `hooks` (parent) and `hooks.pre-tool-use` (specific). Why did this cause test failures with fallbacks?
+
+<details>
+<summary>Answer</summary>
+
+The fallback was declared for `hooks.pre-tool-use` on Cursor. But the inferred capabilities also included `hooks` (the parent). Cursor doesn't support `hooks` either, and there was no fallback for the parent. So `hooks` errored while `hooks.pre-tool-use` was correctly downgraded to info. The fix: only infer specific hook capabilities, not the parent, when specific events are identified. The parent adds no information that the specifics don't already cover.
+</details>
+
+### Q3: Why Three Severity Levels?
+Why not just pass/fail per capability?
+
+<details>
+<summary>Answer</summary>
+
+Because "partial support" is a real and important middle ground. When OpenCode has `Partial` support for skills (JS exports only, not markdown-based), the plugin will work — just differently. That's a warning, not an error. The author should know about it but shouldn't be blocked. Similarly, when a fallback is declared, the author has acknowledged and planned for the degradation — that's informational, not a problem.
+</details>
+
+### Q4: Pure Function Design
+The analyzer takes `&PluginIR` and returns `AnalysisReport`. Why not modify the IR in place (e.g., annotating each skill with its compatibility)?
+
+<details>
+<summary>Answer</summary>
+
+Separation of concerns. The IR represents what the plugin IS (its structure and content). The report represents what the analyzer FOUND (compatibility issues). Mixing them would mean the IR's shape depends on which targets you're analyzing for. The emitters need both — the original IR to know what to generate, and the report to know how to degrade. Keeping them separate also means you can analyze once and emit many times without re-analyzing.
+</details>
+
+### Q5: The `move` Keyword
+In `for_target(&self, target: Target)`, why does the returned iterator's closure need `move`?
+
+<details>
+<summary>Answer</summary>
+
+The `target` parameter is a `Target` (which is `Copy`). Without `move`, the closure captures `&target` — a reference to the function parameter. But the function returns the iterator, and the parameter's stack frame is gone by then. The reference would dangle. `move` copies `target` into the closure so it owns its own copy. This is a common pattern when returning closures that capture function parameters. Rust's borrow checker catches this at compile time if you forget `move`.
+</details>
+
+---
+
+*This guide grows with each phase. Phase 4 (Emitters) will cover target-specific code generation and the Emitter trait.*
