@@ -117,7 +117,7 @@ author: "Jon Willis"
         }"#;
         let manifest: PluginManifest = from_json(json);
         match &manifest.author {
-            Author::Structured { name, email } => {
+            Author::Structured { name, email, .. } => {
                 assert_eq!(name, "Jon Willis");
                 assert_eq!(email.as_deref(), Some("jon@example.com"));
             }
@@ -735,6 +735,7 @@ mod plugin_ir {
                 author: Author::default(),
                 license: None,
                 keywords: vec![],
+                homepage: None,
                 ir_version: None,
                 targets: vec![],
                 requires: None,
@@ -765,6 +766,7 @@ mod plugin_ir {
                 author: Author::default(),
                 license: None,
                 keywords: vec![],
+                homepage: None,
                 ir_version: None,
                 targets: vec![],
                 requires: None,

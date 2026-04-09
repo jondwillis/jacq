@@ -82,6 +82,10 @@ pub struct PluginManifest {
     #[serde(default)]
     pub keywords: Vec<String>,
 
+    /// Plugin homepage URL
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+
     // -- IR-specific fields (absent in Claude Code plugin.json) --
     /// IR schema version
     #[serde(default)]
@@ -122,7 +126,13 @@ fn default_version() -> String {
 #[serde(untagged)]
 pub enum Author {
     Name(String),
-    Structured { name: String, email: Option<String> },
+    Structured {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        email: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+    },
 }
 
 impl Default for Author {

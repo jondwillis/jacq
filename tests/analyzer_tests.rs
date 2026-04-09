@@ -22,6 +22,7 @@ fn minimal_manifest(name: &str, targets: Vec<Target>) -> PluginManifest {
         author: Author::default(),
         license: None,
         keywords: vec![],
+        homepage: None,
         ir_version: Some("0.1".to_string()),
         targets,
         requires: None,

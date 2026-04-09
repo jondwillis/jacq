@@ -23,9 +23,11 @@ fn ir_manifest(name: &str, targets: Vec<Target>) -> PluginManifest {
         author: Author::Structured {
             name: "Test".to_string(),
             email: Some("test@example.com".to_string()),
+            url: None,
         },
         license: Some("MIT".to_string()),
         keywords: vec!["test".to_string()],
+        homepage: None,
         ir_version: Some("0.1".to_string()),
         targets,
         requires: None,

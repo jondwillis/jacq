@@ -165,6 +165,56 @@ fn read_file(path: &Path) -> Result<String> {
 }
 
 // ---------------------------------------------------------------------------
+// YAML frontmatter helpers
+// ---------------------------------------------------------------------------
+
+/// Sanitize YAML frontmatter by quoting values that contain problematic characters.
+/// Many real-world Claude Code plugins have unquoted values with colons, angle brackets,
+/// etc. that are technically invalid YAML. This makes parsing lenient.
+fn sanitize_yaml(yaml: &str) -> String {
+    yaml.lines()
+        .map(|line| {
+            // Match "key: value" where value is not already quoted and contains
+            // characters that break YAML parsing (: after the first one, <, >)
+            if let Some(colon_pos) = line.find(": ") {
+                let key = &line[..colon_pos];
+                let value = &line[colon_pos + 2..];
+                // Skip if already quoted, is a list item, or is a simple value
+                let trimmed = value.trim();
+                if trimmed.starts_with('"')
+                    || trimmed.starts_with('\'')
+                    || trimmed.starts_with('[')
+                    || trimmed.starts_with('{')
+                    || key.starts_with(' ') && key.trim().starts_with('-')
+                {
+                    return line.to_string();
+                }
+                // If the value contains additional colons or angle brackets, quote it
+                if trimmed.contains(": ") || trimmed.contains('<') || trimmed.contains('>') {
+                    let escaped = trimmed.replace('"', r#"\""#);
+                    return format!("{key}: \"{escaped}\"");
+                }
+            }
+            line.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Try parsing YAML frontmatter, with lenient fallback for malformed values.
+fn parse_yaml_frontmatter<T: serde::de::DeserializeOwned>(yaml: &str, path: &std::path::Path) -> Result<T> {
+    serde_yaml::from_str(yaml)
+        .or_else(|_| {
+            let sanitized = sanitize_yaml(yaml);
+            serde_yaml::from_str(&sanitized)
+        })
+        .map_err(|e| JacqError::InvalidFrontmatter {
+            path: path.to_path_buf(),
+            reason: e.to_string(),
+        })
+}
+
+// ---------------------------------------------------------------------------
 // YAML frontmatter extraction
 // ---------------------------------------------------------------------------
 
@@ -211,12 +261,7 @@ fn parse_md_files(dir: &Path, subdir: &str, _format: &ManifestFormat) -> Result<
 
         let (yaml_str, body) = split_frontmatter(&content);
         let frontmatter: SkillFrontmatter = match yaml_str {
-            Some(yaml) => serde_yaml::from_str(yaml).map_err(|e| {
-                JacqError::InvalidFrontmatter {
-                    path: rel_path.clone(),
-                    reason: e.to_string(),
-                }
-            })?,
+            Some(yaml) => parse_yaml_frontmatter(yaml, &rel_path)?,
             None => SkillFrontmatter::default(),
         };
 
@@ -253,12 +298,7 @@ fn parse_agent_files(dir: &Path) -> Result<Vec<AgentDef>> {
 
         let (yaml_str, body) = split_frontmatter(&content);
         let frontmatter: AgentFrontmatter = match yaml_str {
-            Some(yaml) => serde_yaml::from_str(yaml).map_err(|e| {
-                JacqError::InvalidFrontmatter {
-                    path: rel_path.clone(),
-                    reason: e.to_string(),
-                }
-            })?,
+            Some(yaml) => parse_yaml_frontmatter(yaml, &rel_path)?,
             None => AgentFrontmatter::default(),
         };
 

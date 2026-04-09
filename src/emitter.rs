@@ -50,17 +50,21 @@ fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<
         "description": ir.manifest.description,
         "author": match &ir.manifest.author {
             Author::Name(n) => serde_json::json!({"name": n}),
-            Author::Structured { name, email } => {
+            Author::Structured { name, email, url } => {
                 let mut m = serde_json::Map::new();
                 m.insert("name".to_string(), serde_json::Value::String(name.clone()));
                 if let Some(e) = email {
                     m.insert("email".to_string(), serde_json::Value::String(e.clone()));
+                }
+                if let Some(u) = url {
+                    m.insert("url".to_string(), serde_json::Value::String(u.clone()));
                 }
                 serde_json::Value::Object(m)
             }
         },
         "license": ir.manifest.license,
         "keywords": ir.manifest.keywords,
+        "homepage": ir.manifest.homepage,
     });
     write_json(dir, "plugin.json", &plugin_json)?;
 
