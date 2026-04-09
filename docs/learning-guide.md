@@ -946,4 +946,157 @@ The render function checks `var_def.targets.get(&target)` first. If Codex has no
 
 ---
 
-*This guide will continue to grow as jacq evolves. Next: shared fragments (`{% include %}`), schema-driven content (`{{ schema_enum() }}`), and the LSP server.*
+## Shared Fragments & RenderEngine
+
+### The Include Problem
+
+Real plugins have repeated content. Error handling rules that should appear in every skill. Common guidelines that apply to both skills and agents. Without a mechanism for sharing, authors copy-paste — and copy-paste drifts.
+
+jacq's solution: a `shared/` directory of `.md` fragments, included at compile time via Tera's `{% include "name" %}` directive.
+
+```
+my-plugin/
+  plugin.yaml
+  shared/
+    error-handling.md    ← reusable fragments
+    common-rules.md
+  skills/
+    search.md            ← can {% include "error-handling" %}
+    review.md            ← can {% include "common-rules" %}
+```
+
+### Detection: Two Kinds of Template Body
+
+The original template extraction only detected `{{var}}`. But a body like this:
+
+```markdown
+{% include "error-handling" %}
+Do the task.
+```
+
+has no `{{var}}` — it would stay `Plain` and skip Tera rendering entirely. The include would appear literally in the output.
+
+The fix: `extract()` now checks for both patterns:
+
+```rust
+pub fn extract(body: &str) -> BodyContent {
+    let variables = extract_variables(body);
+    let includes = extract_includes(body);
+    if variables.is_empty() && includes.is_empty() {
+        BodyContent::Plain(body.to_string())
+    } else {
+        BodyContent::Template(TemplateBody {
+            raw: body.to_string(),
+            variables,
+            includes,  // NEW: tracks which fragments this body needs
+        })
+    }
+}
+```
+
+This means `TemplateBody` now represents "a body that needs Tera processing" — whether for variable substitution, includes, or both.
+
+### Pre-Validation vs Runtime Errors
+
+When `{% include "eror-handling" %}` has a typo, Tera would fail at render time with a generic "template not found" error. jacq pre-validates: during `validate()`, every include name is checked against the set of known shared fragment names. The error includes the source file path:
+
+```
+Missing shared fragment 'eror-handling' included in skills/search.md
+  help: Create shared/eror-handling.md or check the include name
+```
+
+This is the same design principle as undeclared variable checking — fail fast with rich diagnostics, before any emission.
+
+### The RenderEngine Optimization
+
+The first implementation of `render()` created a new `Tera` instance per call — registering all shared fragments and building a variable `Context` each time. For a plugin with 10 skills and 5 fragments, that's 10 Tera instances and 50 fragment registrations.
+
+The `RenderEngine` struct fixes this:
+
+```rust
+pub struct RenderEngine {
+    tera: Tera,       // shared fragments pre-registered
+    context: Context,  // vars pre-resolved for one target
+}
+```
+
+Built once per target in `emit()`, then passed to all rendering helpers. Each body render just clones the Tera instance (cheap — copies the template map, doesn't re-parse) and calls `render_str()`.
+
+**Before**: N bodies × M fragments = N×M registrations + N Context builds
+**After**: M registrations + 1 Context build + N clones
+
+This is the same pattern compilers use: build expensive data structures once during initialization, then share them across all processing.
+
+### Nested Includes
+
+Because Tera handles include resolution natively, nested includes work for free:
+
+```markdown
+<!-- shared/outer.md -->
+## Setup
+{% include "inner" %}
+## Teardown
+```
+
+```markdown
+<!-- shared/inner.md -->
+Always validate inputs first.
+```
+
+When a skill includes "outer", Tera resolves "outer" → finds `{% include "inner" %}` inside → resolves "inner" → produces the full content. No special handling needed in jacq.
+
+### Variables in Shared Fragments
+
+Shared fragments can themselves contain `{{var}}` references:
+
+```markdown
+<!-- shared/project-header.md -->
+# {{project_name}} Guidelines
+Version: {{version}}
+```
+
+These variables are resolved at render time, same as any other body. The `extract_all()` function processes shared fragments just like skills and agents, so undeclared variables in fragments are caught by `validate()`.
+
+---
+
+### Quiz: Shared Fragments
+
+### Q1: Why Not Just Use Markdown Includes?
+Some Markdown processors support `!include` directives. Why does jacq use Tera's `{% include %}` instead?
+
+<details>
+<summary>Answer</summary>
+
+Tera's include system is template-aware: included content goes through the same rendering pipeline (variable substitution, nested includes) as the parent body. A Markdown `!include` would splice in raw text before template processing, which means variables in included files wouldn't be resolved. Tera also gives us compile-time template resolution, registered template namespacing, and error reporting — all for free.
+</details>
+
+### Q2: Why Track Include Names in TemplateBody?
+The `TemplateBody.includes` field stores extracted include names. Why not just let Tera discover them at render time?
+
+<details>
+<summary>Answer</summary>
+
+Pre-extracting include names enables validation before rendering. `validate()` can check that every referenced fragment exists without actually running Tera. This gives better error messages (with source file paths), runs in a single pass across all bodies, and works with `jacq validate` (no emission needed). It also prepares the IR for future LSP features — the LSP can offer autocomplete for include names and go-to-definition from `{% include "X" %}` to `shared/X.md`.
+</details>
+
+### Q3: The RenderEngine Clone
+`RenderEngine::render()` clones `self.tera` for each Template body. Why not mutate in place?
+
+<details>
+<summary>Answer</summary>
+
+Tera's `render_str()` takes `&mut self` — it temporarily registers the inline template. If we mutated in place, we'd accumulate `__body__` templates from previous renders (or need cleanup). Cloning is cheap (it copies the template HashMap, not re-parsing any templates) and keeps the base engine clean. This is the same pattern as "prototype" objects — clone, customize, discard.
+</details>
+
+### Q4: Fragment Scope
+Can a shared fragment include another shared fragment? Can a shared fragment include a skill body?
+
+<details>
+<summary>Answer</summary>
+
+Yes to the first — nested includes work because all shared fragments are registered in the same Tera instance, and Tera resolves includes transitively. No to the second — skill bodies are rendered individually as `__body__`, not registered as named templates. Includes are one-directional: skills/agents/instructions can include shared fragments, but shared fragments can only include other shared fragments. This prevents circular dependencies and keeps the dependency graph simple: shared → shared → ... (DAG), skills → shared (leaf).
+</details>
+
+---
+
+*Next: schema-driven content (`{{ schema_enum() }}`), priority-based composition, and the LSP server.*
