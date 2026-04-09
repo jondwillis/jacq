@@ -1,33 +1,51 @@
 ---
 name: generate-examples
 description: "Build all vendor plugins (claude-plugins-official) through jacq's pipeline and output to examples/. Use after updating the vendor submodule, after IR changes, or to verify that jacq can round-trip every official and external Claude Code plugin."
+argument-hint: "[--no-update] [plugin-name]"
 ---
 
 # Generate Examples
 
-Transliterates every Claude Code plugin in `vendor/claude-plugins-official/` through jacq's build pipeline, producing compiled output in `examples/<plugin-name>/dist/claude-code/` and an IR manifest at `examples/<plugin-name>/plugin.yaml`.
+Transliterates Claude Code plugins from `vendor/claude-plugins-official/` through jacq's build pipeline, producing compiled output in `examples/<plugin-name>/dist/claude-code/` and an IR manifest at `examples/<plugin-name>/plugin.yaml`.
 
-## Usage
+## Arguments
 
+Parse `$ARGUMENTS` for:
+- **no args (default)**: update submodule, then build all plugins
+- `--no-update`: skip the submodule pull (use current vendor state)
+- `<plugin-name>`: build only the named plugin (e.g., `hookify`, `commit-commands`)
+
+## Step 1: Update Vendor Plugins
+
+Unless `--no-update` was passed:
+
+```bash
+cd vendor/claude-plugins-official && git pull origin main && cd ../..
+```
+
+## Step 2: Build
+
+If a specific plugin name was given:
+```bash
+# Single plugin
+cargo build --quiet
+./target/debug/jacq build "vendor/claude-plugins-official/plugins/<name>" --target claude-code --output "examples/<name>/dist"
+./target/debug/jacq inspect "vendor/claude-plugins-official/plugins/<name>"
+```
+
+Otherwise, run the batch script:
 ```bash
 ./scripts/generate-examples.sh
 ```
 
-This will:
-1. Build jacq (if needed)
-2. Find all plugins with a `plugin.json` manifest in both `plugins/` and `external_plugins/`
-3. Run `jacq build --target claude-code` on each
-4. Run `jacq init --from` to generate `plugin.yaml` (IR representation)
-5. Report pass/fail counts
+## Step 3: Report
 
-## When to Run
+After building, summarize:
+- How many passed/failed
+- Any new plugins since last run (compare `examples/` dirs vs vendor dirs)
+- If any failed, show the parse error and suggest the fix (usually a missing field in `src/ir.rs`)
 
-- After `cd vendor/claude-plugins-official && git pull` to pick up new plugins
-- After changing `src/ir.rs`, `src/parser.rs`, or `src/emitter.rs` — verifies nothing broke
-- To refresh examples after adding new frontmatter fields or component types
-- As a complement to `/spec-check` — spec-check validates conformance, this generates artifacts
-
-## What to Check
+## What to Check on Failure
 
 If a plugin fails:
 1. Run `jacq inspect vendor/claude-plugins-official/plugins/<name>` to see the parse error

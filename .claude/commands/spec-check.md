@@ -1,11 +1,29 @@
 ---
 name: spec-check
-description: "Verify jacq's IR types against the official Claude Code plugin specification. Use this skill when updating jacq's IR, after adding new fields or component types, when a new Claude Code version ships, or when roundtrip tests fail against vendor plugins. Combines programmatic checks (build, test suite, 37-plugin roundtrip) with AI-assisted doc comparison."
+description: "Verify jacq's IR types against the official Claude Code plugin specification. Use this skill when updating jacq's IR, after adding new fields or component types, when a new Claude Code version ships, or when roundtrip tests fail against vendor plugins. Combines programmatic checks (build, test suite, plugin roundtrip) with AI-assisted doc comparison and example generation."
+argument-hint: "[--no-update] [--skip-examples]"
 ---
 
 # Spec Conformance Check
 
-You are verifying that jacq's Intermediate Representation (IR) fully and correctly models the Claude Code plugin specification. This is a two-phase process: programmatic validation followed by documentation-grounded gap analysis.
+You are verifying that jacq's Intermediate Representation (IR) fully and correctly models the Claude Code plugin specification.
+
+## Arguments
+
+Parse `$ARGUMENTS` for flags:
+- **no flags (default)**: update submodule, run programmatic checks, run doc gap analysis, generate examples
+- `--no-update`: skip the submodule pull (use current vendor state)
+- `--skip-examples`: skip example generation at the end
+
+## Phase 0: Update Vendor Plugins
+
+Unless `--no-update` was passed, pull the latest vendor plugins:
+
+```bash
+cd vendor/claude-plugins-official && git pull origin main && cd ../..
+```
+
+If the submodule has new or changed plugins, that's the whole point — `deny_unknown_fields` will catch any spec drift in the roundtrip tests.
 
 ## Phase 1: Programmatic Checks
 
@@ -18,7 +36,7 @@ Run the spec-check script from the repo root:
 This validates:
 - Build succeeds
 - All tests pass (unit + integration + roundtrip)
-- 37 official+external plugins roundtrip (parse → IR → emit → compare)
+- All official+external plugins roundtrip (parse → IR → emit → compare)
 - No `#[serde(flatten)]` catch-alls in `src/ir.rs` (unknown fields must be rejected)
 - `deny_unknown_fields` on frontmatter types
 
@@ -96,27 +114,21 @@ done | sort -u
 
 Any key that appears in real plugins but not in `SkillFrontmatter` or `AgentFrontmatter` is a gap — either the spec is incomplete or we are.
 
-### Step 4: Update the submodule and retest
+## Phase 3: Generate Examples
+
+Unless `--skip-examples` was passed, regenerate all examples:
 
 ```bash
-cd vendor/claude-plugins-official && git pull origin main && cd ../..
-cargo test roundtrip
+./scripts/generate-examples.sh
 ```
 
-If new plugins or updated plugins cause parse failures, that's the `deny_unknown_fields` catching spec drift — which is exactly what we want. Fix the IR, add the field, rerun.
-
-## When to Run This
-
-- After any change to `src/ir.rs`
-- After `git submodule update` pulls new vendor plugins
-- When a new Claude Code version ships (check the docs for new fields)
-- When roundtrip tests fail in CI
-- Periodically (monthly) as a drift check
+This builds every vendor plugin through jacq's pipeline, catching any emitter regressions.
 
 ## Key Files
 
 - `src/ir.rs` — All IR types (this is what we're validating)
 - `src/parser.rs` — Frontmatter parsing with `sanitize_yaml` for lenient input
-- `tests/roundtrip_tests.rs` — 37-plugin conformance suite
+- `tests/roundtrip_tests.rs` — Plugin conformance suite
 - `vendor/claude-plugins-official/` — Ground truth: real Anthropic plugins
 - `scripts/spec-check.sh` — Programmatic validation script
+- `scripts/generate-examples.sh` — Batch build all vendor plugins
