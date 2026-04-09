@@ -670,9 +670,9 @@ command: "echo done"
     }
 
     #[test]
-    fn unknown_event_is_captured() {
-        let parsed: HookEvent = serde_yaml::from_str("\"on-session-start\"").unwrap();
-        assert_eq!(parsed, HookEvent::Unknown);
+    fn unknown_event_is_rejected() {
+        let result: Result<HookEvent, _> = serde_yaml::from_str("\"on-session-start\"");
+        assert!(result.is_err(), "unknown event should fail deserialization");
     }
 }
 
@@ -810,10 +810,10 @@ mod permission {
     }
 
     #[test]
-    fn unknown_permission_captured() {
+    fn unknown_permission_rejected() {
         let yaml = r#""database-access""#;
-        let perm: Permission = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(perm, Permission::Unknown);
+        let result: Result<Permission, _> = serde_yaml::from_str(yaml);
+        assert!(result.is_err(), "unknown permission should fail deserialization");
     }
 
     #[test]

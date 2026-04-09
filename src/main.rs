@@ -4,7 +4,7 @@ use clap::Parser;
 
 use jacq::analyzer::{self, Severity};
 use jacq::cli;
-use jacq::emitter::{self, EmitOptions};
+use jacq::emitter;
 use jacq::parser;
 use jacq::targets::Target;
 
@@ -23,8 +23,7 @@ fn main() {
         cli::Command::Test { path, target, .. } => cmd_validate(&path, target),
         cli::Command::Inspect { path } => cmd_inspect(&path),
         cli::Command::Pack { .. } => {
-            eprintln!("jacq pack: not yet implemented");
-            Ok(())
+            Err("jacq pack is not yet implemented".into())
         }
     };
 
@@ -55,12 +54,19 @@ fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn st
         let yaml = serde_yaml::to_string(&manifest)?;
         std::fs::write(dir.join("plugin.yaml"), yaml)?;
 
-        // Copy skills
+        // Copy skills — use ir.source_dir (canonicalized) for path consistency
         if !ir.skills.is_empty() {
             let skills_dir = dir.join("skills");
             std::fs::create_dir_all(&skills_dir)?;
             for skill in &ir.skills {
-                let content = std::fs::read_to_string(source.join(&skill.source_path))?;
+                let skill_path = ir.source_dir.join(&skill.source_path);
+                let content = std::fs::read_to_string(&skill_path).map_err(|e| {
+                    format!(
+                        "failed to read skill '{}' from {}: {e}",
+                        skill.name,
+                        skill_path.display()
+                    )
+                })?;
                 std::fs::write(skills_dir.join(format!("{}.md", skill.name)), content)?;
             }
         }
@@ -147,15 +153,10 @@ fn cmd_validate(
         {
             continue;
         }
-        let prefix = match diag.severity {
-            Severity::Error => {
-                has_errors = true;
-                "ERROR"
-            }
-            Severity::Warning => "WARN ",
-            Severity::Info => "INFO ",
-        };
-        println!("  [{prefix}] [{}] {}", diag.target, diag.message);
+        if diag.severity == Severity::Error {
+            has_errors = true;
+        }
+        println!("  [{}] [{}] {}", diag.severity.label(), diag.target, diag.message);
     }
 
     for (target_name, summary) in &report.target_summaries {
@@ -186,7 +187,6 @@ fn cmd_build(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut ir = parser::parse_plugin(path)?;
 
-    // If --target specified, narrow to just that target
     if let Some(t) = target {
         ir.manifest.targets = vec![t];
     }
@@ -195,22 +195,14 @@ fn cmd_build(
         return Err("no targets declared in plugin manifest. Add targets to plugin.yaml or use --target".into());
     }
 
-    // Analyze
     let report = analyzer::analyze(&ir);
     let has_errors = report.errors().count() > 0;
 
-    // Print diagnostics
     for diag in &report.diagnostics {
-        let prefix = match diag.severity {
-            Severity::Error => "ERROR",
-            Severity::Warning => {
-                if strict {
-                    "ERROR"
-                } else {
-                    "WARN "
-                }
-            }
-            Severity::Info => "INFO ",
+        let prefix = if strict && diag.severity == Severity::Warning {
+            "ERROR"
+        } else {
+            diag.severity.label()
         };
         eprintln!("  [{prefix}] [{}] {}", diag.target, diag.message);
     }
@@ -219,12 +211,10 @@ fn cmd_build(
         return Err("build failed due to capability errors".into());
     }
 
-    // Emit
     let output_dir = output.unwrap_or(std::path::Path::new("dist"));
     std::fs::create_dir_all(output_dir)?;
 
-    let opts = EmitOptions { strict };
-    emitter::emit(&ir, output_dir, &opts)?;
+    emitter::emit(&ir, output_dir)?;
 
     for t in &ir.manifest.targets {
         println!("  Built: {}/{}", output_dir.display(), t);
@@ -245,22 +235,14 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
         println!(
             "  Skills:       {}  ({})",
             ir.skills.len(),
-            ir.skills
-                .iter()
-                .map(|s| s.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
+            ir.skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
         );
     }
     if !ir.agents.is_empty() {
         println!(
             "  Agents:       {}  ({})",
             ir.agents.len(),
-            ir.agents
-                .iter()
-                .map(|a| a.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
+            ir.agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
         );
     }
     if !ir.hooks.is_empty() {
@@ -270,11 +252,7 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
         println!(
             "  MCP servers:  {}  ({})",
             ir.mcp_servers.len(),
-            ir.mcp_servers
-                .iter()
-                .map(|s| s.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
+            ir.mcp_servers.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
         );
     }
     if !ir.instructions.is_empty() {
@@ -293,7 +271,6 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
 
     use jacq::targets::{capability_matrix, SupportLevel, CAPABILITY_KEYS};
 
-    // Print capability matrix
     println!("Capability Matrix:");
     print!("  {:24}", "");
     for t in &ir.manifest.targets {
@@ -317,14 +294,9 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
         println!();
     }
 
-    // Print compatibility summary
     println!();
     for (target_name, summary) in &report.target_summaries {
-        let status = if summary.compatible {
-            "Compatible"
-        } else {
-            "Incompatible"
-        };
+        let status = if summary.compatible { "Compatible" } else { "Incompatible" };
         println!(
             "  {target_name}: {status} ({} error(s), {} warning(s))",
             summary.error_count, summary.warning_count
@@ -334,12 +306,7 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
     if !report.diagnostics.is_empty() {
         println!();
         for diag in &report.diagnostics {
-            let prefix = match diag.severity {
-                Severity::Error => "ERROR",
-                Severity::Warning => "WARN ",
-                Severity::Info => "INFO ",
-            };
-            println!("  [{prefix}] [{}] {}", diag.target, diag.message);
+            println!("  [{}] [{}] {}", diag.severity.label(), diag.target, diag.message);
         }
     }
 

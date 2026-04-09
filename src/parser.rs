@@ -19,8 +19,15 @@ use crate::targets::Target;
 
 /// Parse a plugin directory into an in-memory IR.
 pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
-    let dir = dir.canonicalize().map_err(|_| JacqError::NoManifest {
+    if !dir.exists() {
+        return Err(JacqError::DirectoryNotFound {
+            path: dir.to_path_buf(),
+        });
+    }
+
+    let dir = dir.canonicalize().map_err(|e| JacqError::IoWithPath {
         path: dir.to_path_buf(),
+        source: e,
     })?;
 
     let (manifest, manifest_format) = parse_manifest(&dir)?;
@@ -60,6 +67,53 @@ enum ManifestFormat {
 }
 
 // ---------------------------------------------------------------------------
+// WalkDir helper — collect entries, propagating errors instead of skipping
+// ---------------------------------------------------------------------------
+
+fn walk_files(dir: &Path, max_depth: usize, extensions: &[&str]) -> Result<Vec<walkdir::DirEntry>> {
+    let mut entries = Vec::new();
+    for result in WalkDir::new(dir).min_depth(1).max_depth(max_depth) {
+        let entry = result.map_err(|e| {
+            let path = e.path().unwrap_or(dir).to_path_buf();
+            match e.into_io_error() {
+                Some(io_err) => JacqError::IoWithPath {
+                    path,
+                    source: io_err,
+                },
+                None => JacqError::IoWithPath {
+                    path,
+                    source: std::io::Error::other("walkdir error"),
+                },
+            }
+        })?;
+        if entry.file_type().is_file()
+            && let Some(ext) = entry.path().extension()
+            && extensions.iter().any(|e| *e == ext)
+        {
+            entries.push(entry);
+        }
+    }
+    Ok(entries)
+}
+
+// ---------------------------------------------------------------------------
+// File name extraction — errors on empty names instead of producing ""
+// ---------------------------------------------------------------------------
+
+fn file_stem_or_err(path: &Path) -> Result<String> {
+    let stem = path
+        .file_stem()
+        .and_then(|s| {
+            let s = s.to_string_lossy().to_string();
+            if s.is_empty() { None } else { Some(s) }
+        })
+        .ok_or_else(|| JacqError::ParseError {
+            reason: format!("cannot derive name from path: {}", path.display()),
+        })?;
+    Ok(stem)
+}
+
+// ---------------------------------------------------------------------------
 // Manifest parsing
 // ---------------------------------------------------------------------------
 
@@ -67,7 +121,7 @@ fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
     // Try IR format first: plugin.yaml at root
     let ir_path = dir.join("plugin.yaml");
     if ir_path.exists() {
-        let content = fs::read_to_string(&ir_path).map_err(JacqError::Io)?;
+        let content = read_file(&ir_path)?;
         let manifest: PluginManifest = serde_yaml::from_str(&content).map_err(|e| {
             JacqError::ParseError {
                 reason: format!("{}: {e}", ir_path.display()),
@@ -94,9 +148,17 @@ fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
 }
 
 fn parse_json_manifest(path: &Path) -> Result<PluginManifest> {
-    let content = fs::read_to_string(path).map_err(JacqError::Io)?;
+    let content = read_file(path)?;
     serde_json::from_str(&content).map_err(|e| JacqError::ParseError {
         reason: format!("{}: {e}", path.display()),
+    })
+}
+
+/// Read a file with path context in errors.
+fn read_file(path: &Path) -> Result<String> {
+    fs::read_to_string(path).map_err(|e| JacqError::IoWithPath {
+        path: path.to_path_buf(),
+        source: e,
     })
 }
 
@@ -105,28 +167,23 @@ fn parse_json_manifest(path: &Path) -> Result<PluginManifest> {
 // ---------------------------------------------------------------------------
 
 /// Split a file into YAML frontmatter and markdown body.
-/// Expects the file to start with `---\n`, then YAML, then `---\n`, then body.
-/// If no frontmatter delimiters are found, returns None for frontmatter.
 fn split_frontmatter(content: &str) -> (Option<&str>, &str) {
     let trimmed = content.trim_start();
     if !trimmed.starts_with("---") {
         return (None, content);
     }
 
-    // Find the opening delimiter line
     let after_first = match trimmed.strip_prefix("---") {
         Some(rest) => rest.strip_prefix('\n').unwrap_or(rest),
         None => return (None, content),
     };
 
-    // Find the closing ---
     if let Some(end_idx) = after_first.find("\n---") {
         let yaml = &after_first[..end_idx];
-        let after_close = &after_first[end_idx + 4..]; // skip \n---
+        let after_close = &after_first[end_idx + 4..];
         let body = after_close.strip_prefix('\n').unwrap_or(after_close);
         (Some(yaml), body)
     } else {
-        // No closing delimiter — treat entire content as body
         (None, content)
     }
 }
@@ -135,40 +192,22 @@ fn split_frontmatter(content: &str) -> (Option<&str>, &str) {
 // Skill/command parsing (.md files with YAML frontmatter)
 // ---------------------------------------------------------------------------
 
-fn parse_md_files(dir: &Path, subdir: &str, format: &ManifestFormat) -> Result<Vec<SkillDef>> {
-    let search_dir = match format {
-        // Claude Code plugins may not have a skills/ dir — they use commands/
-        ManifestFormat::Ir | ManifestFormat::ClaudeCode => dir.join(subdir),
-    };
-
+fn parse_md_files(dir: &Path, subdir: &str, _format: &ManifestFormat) -> Result<Vec<SkillDef>> {
+    let search_dir = dir.join(subdir);
     if !search_dir.exists() {
         return Ok(vec![]);
     }
 
+    let entries = walk_files(&search_dir, 2, &["md"])?;
     let mut skills = Vec::new();
-    for entry in WalkDir::new(&search_dir)
-        .min_depth(1)
-        .max_depth(2)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "md")
-        })
-    {
-        let path = entry.path();
-        let content = fs::read_to_string(path).map_err(JacqError::Io)?;
-        let name = path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
 
+    for entry in entries {
+        let path = entry.path();
+        let content = read_file(path)?;
+        let name = file_stem_or_err(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
         let (yaml_str, body) = split_frontmatter(&content);
-
         let frontmatter: SkillFrontmatter = match yaml_str {
             Some(yaml) => serde_yaml::from_str(yaml).map_err(|e| {
                 JacqError::InvalidFrontmatter {
@@ -201,29 +240,16 @@ fn parse_agent_files(dir: &Path) -> Result<Vec<AgentDef>> {
         return Ok(vec![]);
     }
 
+    let entries = walk_files(&agents_dir, 2, &["md"])?;
     let mut agents = Vec::new();
-    for entry in WalkDir::new(&agents_dir)
-        .min_depth(1)
-        .max_depth(2)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "md")
-        })
-    {
+
+    for entry in entries {
         let path = entry.path();
-        let content = fs::read_to_string(path).map_err(JacqError::Io)?;
-        let name = path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+        let content = read_file(path)?;
+        let name = file_stem_or_err(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
         let (yaml_str, body) = split_frontmatter(&content);
-
         let frontmatter: AgentFrontmatter = match yaml_str {
             Some(yaml) => serde_yaml::from_str(yaml).map_err(|e| {
                 JacqError::InvalidFrontmatter {
@@ -256,20 +282,12 @@ fn parse_hook_files(dir: &Path) -> Result<Vec<HookDef>> {
         return Ok(vec![]);
     }
 
+    let entries = walk_files(&hooks_dir, 1, &["yaml", "yml"])?;
     let mut hooks = Vec::new();
-    for entry in WalkDir::new(&hooks_dir)
-        .min_depth(1)
-        .max_depth(1)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "yaml" || ext == "yml")
-        })
-    {
+
+    for entry in entries {
         let path = entry.path();
-        let content = fs::read_to_string(path).map_err(JacqError::Io)?;
+        let content = read_file(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
         let mut hook: HookDef = serde_yaml::from_str(&content).map_err(|e| {
@@ -278,9 +296,7 @@ fn parse_hook_files(dir: &Path) -> Result<Vec<HookDef>> {
                 reason: e.to_string(),
             }
         })?;
-        // Override source_path with the actual file location
         hook.source_path = rel_path;
-
         hooks.push(hook);
     }
 
@@ -298,20 +314,12 @@ fn parse_mcp_files(dir: &Path) -> Result<Vec<McpServerDef>> {
         return Ok(vec![]);
     }
 
+    let entries = walk_files(&mcp_dir, 1, &["yaml", "yml"])?;
     let mut servers = Vec::new();
-    for entry in WalkDir::new(&mcp_dir)
-        .min_depth(1)
-        .max_depth(1)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "yaml" || ext == "yml")
-        })
-    {
+
+    for entry in entries {
         let path = entry.path();
-        let content = fs::read_to_string(path).map_err(JacqError::Io)?;
+        let content = read_file(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
         let mut server: McpServerDef = serde_yaml::from_str(&content).map_err(|e| {
@@ -321,7 +329,6 @@ fn parse_mcp_files(dir: &Path) -> Result<Vec<McpServerDef>> {
             }
         })?;
         server.source_path = rel_path;
-
         servers.push(server);
     }
 
@@ -339,25 +346,13 @@ fn parse_instruction_files(dir: &Path) -> Result<Vec<InstructionDef>> {
         return Ok(vec![]);
     }
 
+    let entries = walk_files(&instr_dir, 1, &["md"])?;
     let mut instructions = Vec::new();
-    for entry in WalkDir::new(&instr_dir)
-        .min_depth(1)
-        .max_depth(1)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "md")
-        })
-    {
+
+    for entry in entries {
         let path = entry.path();
-        let content = fs::read_to_string(path).map_err(JacqError::Io)?;
-        let name = path
-            .file_stem()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
+        let content = read_file(path)?;
+        let name = file_stem_or_err(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
         instructions.push(InstructionDef {
@@ -393,15 +388,29 @@ fn parse_target_overrides(
         }
 
         let mut files = Vec::new();
-        for entry in WalkDir::new(&target_dir)
-            .min_depth(1)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-        {
+        for result in WalkDir::new(&target_dir).min_depth(1) {
+            let entry = result.map_err(|e| {
+                let path = e.path().unwrap_or(&target_dir).to_path_buf();
+                match e.into_io_error() {
+                    Some(io_err) => JacqError::IoWithPath {
+                        path,
+                        source: io_err,
+                    },
+                    None => JacqError::IoWithPath {
+                        path,
+                        source: std::io::Error::other("walkdir error"),
+                    },
+                }
+            })?;
+            if !entry.file_type().is_file() {
+                continue;
+            }
             let path = entry.path();
             let rel_path = path.strip_prefix(&target_dir).unwrap_or(path).to_path_buf();
-            let content = fs::read(path).map_err(JacqError::Io)?;
+            let content = fs::read(path).map_err(|e| JacqError::IoWithPath {
+                path: path.to_path_buf(),
+                source: e,
+            })?;
             files.push(TargetOverride {
                 path: rel_path,
                 content,
@@ -471,7 +480,6 @@ You are a macOS Notes.app assistant.
         assert!(yaml.contains("description: CRUD operations"));
         assert!(yaml.contains("allowed-tools: Bash(osascript:*)"));
 
-        // Verify the frontmatter parses as SkillFrontmatter
         let parsed: SkillFrontmatter = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(
             parsed.description.as_deref(),

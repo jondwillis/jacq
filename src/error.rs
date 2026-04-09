@@ -9,6 +9,13 @@ use crate::targets::Target;
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum JacqError {
+    #[error("Directory not found: {}", path.display())]
+    #[diagnostic(
+        code(jacq::dir_not_found),
+        help("Check that the path exists and is a directory")
+    )]
+    DirectoryNotFound { path: PathBuf },
+
     #[error("No plugin manifest found in {}", path.display())]
     #[diagnostic(
         code(jacq::no_manifest),
@@ -49,9 +56,20 @@ pub enum JacqError {
     #[diagnostic(code(jacq::missing_file))]
     MissingFile { path: PathBuf },
 
+    #[error("IO error at {}: {source}", path.display())]
+    #[diagnostic(code(jacq::io))]
+    IoWithPath {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+
     #[error(transparent)]
     #[diagnostic(code(jacq::io))]
     Io(#[from] std::io::Error),
+
+    #[error("Serialization error: {reason}")]
+    #[diagnostic(code(jacq::serialization))]
+    Serialization { reason: String },
 }
 
 pub type Result<T> = std::result::Result<T, JacqError>;

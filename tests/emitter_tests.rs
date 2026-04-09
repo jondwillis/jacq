@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use jacq::emitter::{emit, EmitOptions};
+use jacq::emitter::emit;
 use jacq::ir::*;
 use jacq::targets::Target;
 use tempfile::TempDir;
@@ -121,9 +121,7 @@ mod dispatch {
     fn emit_creates_target_subdirectories() {
         let ir = build_ir(vec![Target::ClaudeCode, Target::OpenCode]);
         let tmp = TempDir::new().unwrap();
-        let opts = EmitOptions { strict: false };
-
-        emit(&ir, tmp.path(), &opts).unwrap();
+        emit(&ir, tmp.path()).unwrap();
 
         assert!(file_exists(tmp.path(), "claude-code"));
         assert!(file_exists(tmp.path(), "opencode"));
@@ -139,8 +137,7 @@ mod claude_code {
 
     fn emit_claude_code(ir: &PluginIR) -> (TempDir, PathBuf) {
         let tmp = TempDir::new().unwrap();
-        let opts = EmitOptions { strict: false };
-        emit(ir, tmp.path(), &opts).unwrap();
+        emit(ir, tmp.path()).unwrap();
         let out = tmp.path().join("claude-code");
         (tmp, out)
     }
@@ -228,8 +225,7 @@ mod opencode {
 
     fn emit_opencode(ir: &PluginIR) -> (TempDir, PathBuf) {
         let tmp = TempDir::new().unwrap();
-        let opts = EmitOptions { strict: false };
-        emit(ir, tmp.path(), &opts).unwrap();
+        emit(ir, tmp.path()).unwrap();
         let out = tmp.path().join("opencode");
         (tmp, out)
     }
@@ -277,8 +273,7 @@ mod codex {
 
     fn emit_codex(ir: &PluginIR) -> (TempDir, PathBuf) {
         let tmp = TempDir::new().unwrap();
-        let opts = EmitOptions { strict: false };
-        emit(ir, tmp.path(), &opts).unwrap();
+        emit(ir, tmp.path()).unwrap();
         let out = tmp.path().join("codex");
         (tmp, out)
     }
@@ -339,8 +334,7 @@ mod integration {
         assert!(report.target_summaries[&Target::ClaudeCode].compatible);
 
         let tmp = TempDir::new().unwrap();
-        let opts = EmitOptions { strict: false };
-        emit(&ir, tmp.path(), &opts).unwrap();
+        emit(&ir, tmp.path()).unwrap();
 
         // Should have output for both declared targets
         assert!(file_exists(tmp.path(), "claude-code/plugin.json"));

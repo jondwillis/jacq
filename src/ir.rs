@@ -227,6 +227,9 @@ impl Ord for Capability {
 // Permissions
 // ---------------------------------------------------------------------------
 
+/// Permissions a plugin requires from its host.
+/// Unknown permissions cause a deserialization error — a compiler should
+/// reject unrecognized input rather than silently accepting typos.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Permission {
@@ -234,8 +237,6 @@ pub enum Permission {
     FileWrite,
     Network,
     Subprocess,
-    #[serde(other)]
-    Unknown,
 }
 
 // ---------------------------------------------------------------------------
@@ -347,14 +348,14 @@ pub struct HookDef {
     pub extra: BTreeMap<String, serde_yaml::Value>,
 }
 
+/// Hook event types. Unknown events cause deserialization errors —
+/// a typo like "pre_tool_use" (underscore) is caught at parse time.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum HookEvent {
     PreToolUse,
     PostToolUse,
     Stop,
-    #[serde(other)]
-    Unknown,
 }
 
 // ---------------------------------------------------------------------------

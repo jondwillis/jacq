@@ -141,30 +141,18 @@ fn infer_capabilities(ir: &PluginIR) -> BTreeSet<String> {
     }
 
     if !ir.hooks.is_empty() {
-        // Infer specific hook capabilities, not the parent "hooks".
-        // The specifics are what targets check. If a plugin uses PreToolUse,
-        // we check "hooks.pre-tool-use" against the matrix, not "hooks".
-        // This lets fallbacks cover individual hook types precisely.
-        let mut has_specific = false;
+        // Infer specific hook capabilities rather than the parent "hooks".
+        // This lets targets and fallbacks address individual hook types precisely.
         for hook in &ir.hooks {
-            match hook.event {
-                HookEvent::PreToolUse => {
-                    caps.insert("hooks.pre-tool-use".to_string());
-                    has_specific = true;
-                }
-                HookEvent::PostToolUse => {
-                    caps.insert("hooks.post-tool-use".to_string());
-                    has_specific = true;
-                }
-                HookEvent::Stop => {
-                    caps.insert("hooks.stop".to_string());
-                    has_specific = true;
-                }
-                HookEvent::Unknown => {}
-            }
+            let key = match hook.event {
+                HookEvent::PreToolUse => "hooks.pre-tool-use",
+                HookEvent::PostToolUse => "hooks.post-tool-use",
+                HookEvent::Stop => "hooks.stop",
+            };
+            caps.insert(key.to_string());
         }
         // Only infer parent "hooks" if no specific events were identified
-        if !has_specific {
+        if !caps.iter().any(|k| k.starts_with("hooks.")) {
             caps.insert("hooks".to_string());
         }
     }
@@ -275,6 +263,17 @@ pub enum Severity {
     Error,
     Warning,
     Info,
+}
+
+impl Severity {
+    /// Fixed-width label for diagnostic output (5 chars, right-padded).
+    pub fn label(self) -> &'static str {
+        match self {
+            Severity::Error => "ERROR",
+            Severity::Warning => "WARN ",
+            Severity::Info => "INFO ",
+        }
+    }
 }
 
 /// Per-target compatibility summary.

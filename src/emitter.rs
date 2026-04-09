@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::error::Result;
+use crate::error::{JacqError, Result};
 use crate::ir::*;
 use crate::targets::Target;
 
@@ -15,17 +15,14 @@ use crate::targets::Target;
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Options controlling emission behavior.
-pub struct EmitOptions {
-    /// If true, fail on any capability gap (no fallbacks applied).
-    pub strict: bool,
-}
-
 /// Emit a plugin IR to the output directory, generating one subdirectory per target.
-pub fn emit(ir: &PluginIR, output_dir: &Path, _opts: &EmitOptions) -> Result<()> {
+pub fn emit(ir: &PluginIR, output_dir: &Path) -> Result<()> {
     for target in &ir.manifest.targets {
         let target_dir = output_dir.join(target.as_str());
-        fs::create_dir_all(&target_dir)?;
+        fs::create_dir_all(&target_dir).map_err(|e| JacqError::IoWithPath {
+            path: target_dir.clone(),
+            source: e,
+        })?;
 
         match target {
             Target::ClaudeCode => emit_claude_code(ir, &target_dir)?,
@@ -67,20 +64,34 @@ fn emit_claude_code(ir: &PluginIR, dir: &Path) -> Result<()> {
     // commands/*.md — skills with frontmatter
     if !ir.skills.is_empty() {
         let commands_dir = dir.join("commands");
-        fs::create_dir_all(&commands_dir)?;
+        create_dir(&commands_dir)?;
         for skill in &ir.skills {
-            let content = render_skill_md(skill);
-            fs::write(commands_dir.join(format!("{}.md", skill.name)), content)?;
+            let content = render_skill_md(skill)?;
+            write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
         }
     }
 
     // agents/*.md — agents with frontmatter
     if !ir.agents.is_empty() {
         let agents_dir = dir.join("agents");
-        fs::create_dir_all(&agents_dir)?;
+        create_dir(&agents_dir)?;
         for agent in &ir.agents {
-            let content = render_agent_md(agent);
-            fs::write(agents_dir.join(format!("{}.md", agent.name)), content)?;
+            let content = render_agent_md(agent)?;
+            write_file(&agents_dir.join(format!("{}.md", agent.name)), &content)?;
+        }
+    }
+
+    // hooks — Claude Code hook definitions
+    // Hooks in Claude Code are configured in settings.json, but for plugin
+    // distribution they can be declared in the plugin manifest or as separate files.
+    if !ir.hooks.is_empty() {
+        let hooks_dir = dir.join("hooks");
+        create_dir(&hooks_dir)?;
+        for hook in &ir.hooks {
+            let content = serde_yaml::to_string(&hook).map_err(|e| {
+                JacqError::Serialization { reason: e.to_string() }
+            })?;
+            write_file(&hooks_dir.join(format!("{}.yaml", hook.name)), &content)?;
         }
     }
 
@@ -93,7 +104,7 @@ fn emit_claude_code(ir: &PluginIR, dir: &Path) -> Result<()> {
     // CLAUDE.md — instructions
     if !ir.instructions.is_empty() {
         let content = render_instructions(&ir.instructions);
-        fs::write(dir.join("CLAUDE.md"), content)?;
+        write_file(&dir.join("CLAUDE.md"), &content)?;
     }
 
     Ok(())
@@ -115,8 +126,8 @@ fn emit_opencode(ir: &PluginIR, dir: &Path) -> Result<()> {
     write_json(dir, "package.json", &package_json)?;
 
     // AGENTS.md — combined instructions, skill docs, and agent descriptions
-    let agents_md = render_agents_md(ir);
-    fs::write(dir.join("AGENTS.md"), agents_md)?;
+    let agents_md = render_agents_md(ir, true);
+    write_file(&dir.join("AGENTS.md"), &agents_md)?;
 
     Ok(())
 }
@@ -138,16 +149,16 @@ fn emit_codex(ir: &PluginIR, dir: &Path) -> Result<()> {
     // skills/*.md — Codex has full skill support
     if !ir.skills.is_empty() {
         let skills_dir = dir.join("skills");
-        fs::create_dir_all(&skills_dir)?;
+        create_dir(&skills_dir)?;
         for skill in &ir.skills {
-            let content = render_skill_md(skill);
-            fs::write(skills_dir.join(format!("{}.md", skill.name)), content)?;
+            let content = render_skill_md(skill)?;
+            write_file(&skills_dir.join(format!("{}.md", skill.name)), &content)?;
         }
     }
 
-    // AGENTS.md — instructions and agent descriptions
-    let agents_md = render_agents_md(ir);
-    fs::write(dir.join("AGENTS.md"), agents_md)?;
+    // AGENTS.md — instructions and agent descriptions (NOT skills — they're in skill files)
+    let agents_md = render_agents_md(ir, false);
+    write_file(&dir.join("AGENTS.md"), &agents_md)?;
 
     Ok(())
 }
@@ -157,16 +168,14 @@ fn emit_codex(ir: &PluginIR, dir: &Path) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn emit_cursor(ir: &PluginIR, dir: &Path) -> Result<()> {
-    // .cursorrules — instructions
     if !ir.instructions.is_empty() {
         let content = render_instructions(&ir.instructions);
-        fs::write(dir.join(".cursorrules"), content)?;
+        write_file(&dir.join(".cursorrules"), &content)?;
     }
 
-    // .cursor/mcp.json — MCP config
     if !ir.mcp_servers.is_empty() {
         let cursor_dir = dir.join(".cursor");
-        fs::create_dir_all(&cursor_dir)?;
+        create_dir(&cursor_dir)?;
         let mcp_config = render_mcp_json(&ir.mcp_servers);
         write_json(&cursor_dir, "mcp.json", &mcp_config)?;
     }
@@ -179,7 +188,6 @@ fn emit_cursor(ir: &PluginIR, dir: &Path) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn emit_openclaw(ir: &PluginIR, dir: &Path) -> Result<()> {
-    // package.json — npm-based distribution
     let package_json = serde_json::json!({
         "name": ir.manifest.name,
         "version": ir.manifest.version,
@@ -190,10 +198,9 @@ fn emit_openclaw(ir: &PluginIR, dir: &Path) -> Result<()> {
     });
     write_json(dir, "package.json", &package_json)?;
 
-    // Instructions as README
     if !ir.instructions.is_empty() {
         let content = render_instructions(&ir.instructions);
-        fs::write(dir.join("README.md"), content)?;
+        write_file(&dir.join("README.md"), &content)?;
     }
 
     Ok(())
@@ -203,69 +210,71 @@ fn emit_openclaw(ir: &PluginIR, dir: &Path) -> Result<()> {
 // Rendering helpers
 // ---------------------------------------------------------------------------
 
-/// Render a skill definition as a .md file with YAML frontmatter.
-fn render_skill_md(skill: &SkillDef) -> String {
-    let mut frontmatter = BTreeMap::new();
-
-    if let Some(desc) = &skill.frontmatter.description {
-        frontmatter.insert("description", serde_yaml::to_value(desc).unwrap());
-    }
-    if let Some(hint) = &skill.frontmatter.argument_hint {
-        frontmatter.insert("argument-hint", serde_yaml::to_value(hint).unwrap());
-    }
-    if let Some(tools) = &skill.frontmatter.allowed_tools {
-        frontmatter.insert("allowed-tools", serde_yaml::to_value(tools).unwrap());
-    }
-    if let Some(color) = &skill.frontmatter.color {
-        frontmatter.insert("color", serde_yaml::to_value(color).unwrap());
-    }
-    if let Some(examples) = &skill.frontmatter.examples {
-        frontmatter.insert("examples", serde_yaml::to_value(examples).unwrap());
-    }
-
-    // Include extra fields
-    for (k, v) in &skill.frontmatter.extra {
-        frontmatter.insert(k.as_str(), v.clone());
-    }
-
-    if frontmatter.is_empty() {
-        return skill.body.clone();
-    }
-
-    let yaml = serde_yaml::to_string(&frontmatter).unwrap();
-    format!("---\n{}---\n\n{}", yaml, skill.body)
+fn yaml_value(v: &impl serde::Serialize) -> Result<serde_yaml::Value> {
+    serde_yaml::to_value(v).map_err(|e| JacqError::Serialization {
+        reason: e.to_string(),
+    })
 }
 
-/// Render an agent definition as a .md file with YAML frontmatter.
-fn render_agent_md(agent: &AgentDef) -> String {
-    let mut frontmatter = BTreeMap::new();
+fn render_skill_md(skill: &SkillDef) -> Result<String> {
+    let mut fm = BTreeMap::new();
+
+    if let Some(desc) = &skill.frontmatter.description {
+        fm.insert("description", yaml_value(desc)?);
+    }
+    if let Some(hint) = &skill.frontmatter.argument_hint {
+        fm.insert("argument-hint", yaml_value(hint)?);
+    }
+    if let Some(tools) = &skill.frontmatter.allowed_tools {
+        fm.insert("allowed-tools", yaml_value(tools)?);
+    }
+    if let Some(color) = &skill.frontmatter.color {
+        fm.insert("color", yaml_value(color)?);
+    }
+    if let Some(examples) = &skill.frontmatter.examples {
+        fm.insert("examples", yaml_value(examples)?);
+    }
+
+    for (k, v) in &skill.frontmatter.extra {
+        fm.insert(k.as_str(), v.clone());
+    }
+
+    wrap_frontmatter(fm, &skill.body)
+}
+
+fn render_agent_md(agent: &AgentDef) -> Result<String> {
+    let mut fm = BTreeMap::new();
 
     if let Some(desc) = &agent.frontmatter.description {
-        frontmatter.insert("description", serde_yaml::to_value(desc).unwrap());
+        fm.insert("description", yaml_value(desc)?);
     }
     if let Some(model) = &agent.frontmatter.model {
-        frontmatter.insert("model", serde_yaml::to_value(model).unwrap());
+        fm.insert("model", yaml_value(model)?);
     }
     if let Some(tools) = &agent.frontmatter.allowed_tools {
-        frontmatter.insert("allowed-tools", serde_yaml::to_value(tools).unwrap());
+        fm.insert("allowed-tools", yaml_value(tools)?);
     }
     if let Some(color) = &agent.frontmatter.color {
-        frontmatter.insert("color", serde_yaml::to_value(color).unwrap());
+        fm.insert("color", yaml_value(color)?);
     }
 
     for (k, v) in &agent.frontmatter.extra {
-        frontmatter.insert(k.as_str(), v.clone());
+        fm.insert(k.as_str(), v.clone());
     }
 
-    if frontmatter.is_empty() {
-        return agent.body.clone();
-    }
-
-    let yaml = serde_yaml::to_string(&frontmatter).unwrap();
-    format!("---\n{}---\n\n{}", yaml, agent.body)
+    wrap_frontmatter(fm, &agent.body)
 }
 
-/// Render MCP servers as a JSON config.
+fn wrap_frontmatter(frontmatter: BTreeMap<&str, serde_yaml::Value>, body: &str) -> Result<String> {
+    if frontmatter.is_empty() {
+        return Ok(body.to_string());
+    }
+    let yaml = serde_yaml::to_string(&frontmatter).map_err(|e| JacqError::Serialization {
+        reason: e.to_string(),
+    })?;
+    Ok(format!("---\n{}---\n\n{}", yaml, body))
+}
+
 fn render_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
     let mut mcp_servers = serde_json::Map::new();
     for server in servers {
@@ -277,13 +286,13 @@ fn render_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
         if !server.args.is_empty() {
             entry.insert(
                 "args".to_string(),
-                serde_json::to_value(&server.args).unwrap(),
+                serde_json::to_value(&server.args).unwrap_or_default(),
             );
         }
         if !server.env.is_empty() {
             entry.insert(
                 "env".to_string(),
-                serde_json::to_value(&server.env).unwrap(),
+                serde_json::to_value(&server.env).unwrap_or_default(),
             );
         }
         mcp_servers.insert(server.name.clone(), serde_json::Value::Object(entry));
@@ -291,27 +300,26 @@ fn render_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
     serde_json::json!({ "mcpServers": mcp_servers })
 }
 
-/// Render instructions as a combined document.
+/// Render instructions with blank-line separation between files.
 fn render_instructions(instructions: &[InstructionDef]) -> String {
     instructions
         .iter()
         .map(|i| i.body.as_str())
         .collect::<Vec<_>>()
-        .join("\n")
+        .join("\n\n")
 }
 
 /// Render AGENTS.md — used by OpenCode and Codex.
-/// Combines instructions, skill descriptions, and agent descriptions.
-fn render_agents_md(ir: &PluginIR) -> String {
+/// `include_skills`: if true, document skills in AGENTS.md (OpenCode).
+/// If false, skip skills (Codex emits them as native skill files).
+fn render_agents_md(ir: &PluginIR, include_skills: bool) -> String {
     let mut sections = Vec::new();
 
-    // Instructions first
     if !ir.instructions.is_empty() {
         sections.push(render_instructions(&ir.instructions));
     }
 
-    // Skills as documented commands
-    if !ir.skills.is_empty() {
+    if include_skills && !ir.skills.is_empty() {
         let mut skill_section = String::from("## Available Commands\n\n");
         for skill in &ir.skills {
             skill_section.push_str(&format!("### {}\n\n", skill.name));
@@ -324,7 +332,6 @@ fn render_agents_md(ir: &PluginIR) -> String {
         sections.push(skill_section);
     }
 
-    // Agents as documented sub-agents
     if !ir.agents.is_empty() {
         let mut agent_section = String::from("## Available Agents\n\n");
         for agent in &ir.agents {
@@ -343,7 +350,22 @@ fn render_agents_md(ir: &PluginIR) -> String {
 
 /// Write a JSON value to a file with pretty formatting.
 fn write_json(dir: &Path, filename: &str, value: &serde_json::Value) -> Result<()> {
-    let content = serde_json::to_string_pretty(value).unwrap();
-    fs::write(dir.join(filename), content)?;
-    Ok(())
+    let content = serde_json::to_string_pretty(value).map_err(|e| JacqError::Serialization {
+        reason: e.to_string(),
+    })?;
+    write_file(&dir.join(filename), &content)
+}
+
+fn write_file(path: &Path, content: &str) -> Result<()> {
+    fs::write(path, content).map_err(|e| JacqError::IoWithPath {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
+fn create_dir(path: &Path) -> Result<()> {
+    fs::create_dir_all(path).map_err(|e| JacqError::IoWithPath {
+        path: path.to_path_buf(),
+        source: e,
+    })
 }
