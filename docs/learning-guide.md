@@ -805,4 +805,145 @@ It serves as a regression test for complex features without polluting the public
 
 ---
 
-*This guide will continue to grow as jacq evolves. See `research/dogfooding-findings.md` for the full gap analysis driving v0.2.*
+## Template Compilation: Programmatic Reuse
+
+### What This Phase Does
+
+Transforms jacq from a "file structure compiler" to a "template compiler." Skill, agent, and instruction bodies are no longer opaque strings — they're parsed templates with validated variable references and target-specific rendering.
+
+### The Core Type Change
+
+```rust
+// Before: body is an opaque string, copied verbatim
+pub body: String,
+
+// After: body is either plain text or a parsed template
+pub body: BodyContent,
+
+pub enum BodyContent {
+    Plain(String),           // no {{...}}, zero overhead
+    Template(TemplateBody),  // has variables, needs rendering
+}
+```
+
+`From<String>` and `From<&str>` impls make migration mechanical: `body: "text".to_string()` → `body: "text".into()`. The Rust compiler tells you every location to change.
+
+### The Pipeline Grows
+
+```
+Before:  parse → analyze → emit (bodies copied verbatim)
+After:   parse → EXTRACT → VALIDATE → analyze → RENDER → emit
+```
+
+New stages:
+- **Extract** — `template::extract_all(ir)` scans bodies for `{{var}}` patterns, upgrades `Plain` → `Template`
+- **Validate** — `template::validate(ir)` checks all variable refs exist in `manifest.vars`
+- **Render** — `template::render(body, vars, target)` substitutes values via Tera, target-specific
+
+### Key Design Decisions
+
+#### 1. `BodyContent` Enum (Parse, Don't Validate)
+
+Rather than treating every body as a template (expensive, could break content with literal `{{`), the `extract()` function only upgrades bodies that actually contain `{{...}}`. Bodies without templates remain `Plain` — zero overhead, zero risk.
+
+This is the "parse, don't validate" principle: a `BodyContent::Template` proves the body has been scanned and its variables catalogued. Downstream code knows what it's dealing with.
+
+#### 2. Target-Specific Variable Values
+
+```yaml
+vars:
+  arguments_var:
+    targets:
+      claude-code: "$ARGUMENTS"
+      codex: "$INPUT"
+      opencode: "${args}"
+```
+
+Each target has its own variable bindings. A skill body with `{{arguments_var}}` compiles to `$ARGUMENTS` for Claude Code and `$INPUT` for Codex. This is the "compile separately per platform" principle applied to content, not just structure.
+
+#### 3. Tera for Rendering (Finally Used)
+
+Tera has been in `Cargo.toml` since Phase 1 but was never imported. Template compilation is why it was added. `Tera::one_off()` renders each body as an inline template — no filesystem, no template registry. Fast enough for the CLI. When we add `{% include %}` (Phase 2), we'll need a persistent `Tera` instance with registered fragments.
+
+#### 4. Source Spans for LSP Readiness
+
+```rust
+pub struct VariableRef {
+    pub name: String,
+    pub span: (usize, usize),  // byte offsets of {{name}} in the raw text
+}
+```
+
+Every variable reference carries byte offsets. This isn't used by the CLI today, but when the LSP is built, it enables "go to definition" (click `{{var}}` → jump to its declaration in `plugin.yaml`) and red squiggles on undeclared variables at exact positions.
+
+### Rust Patterns Used
+
+#### 1. `From<T>` for Migration
+
+```rust
+impl From<String> for BodyContent {
+    fn from(s: String) -> Self { BodyContent::Plain(s) }
+}
+impl From<&str> for BodyContent {
+    fn from(s: &str) -> Self { BodyContent::Plain(s.to_string()) }
+}
+```
+
+This is the migration strategy. 127 existing tests had `body: "text".to_string()`. With the `From` impl, they become `body: "text".into()` — the compiler flags every location, the fix is mechanical, no semantics change.
+
+#### 2. Pattern Matching for Zero-Cost Abstraction
+
+```rust
+pub fn as_raw(&self) -> &str {
+    match self {
+        BodyContent::Plain(s) => s,
+        BodyContent::Template(t) => &t.raw,
+    }
+}
+```
+
+Code that doesn't care about templates (like the emitter writing a body to disk) calls `.as_raw()` and gets a `&str` regardless. The template system adds no overhead to code paths that don't use it.
+
+---
+
+### Quiz: Template Compilation
+
+### Q1: Why Not Template Everything?
+Bodies without `{{` stay as `BodyContent::Plain`. Why not parse every body as a Tera template?
+
+<details>
+<summary>Answer</summary>
+
+Three reasons: (1) **Performance** — Tera parses templates, which is unnecessary overhead for bodies that are just text. (2) **Safety** — a body containing literal `{{ }}` (e.g., documenting Jinja2 templates) would be misinterpreted. (3) **Backwards compatibility** — existing plugins that never use template variables should work identically, with zero behavioral change. The extract function is the gatekeeper: only bodies with actual `{{...}}` patterns are upgraded to `Template`.
+</details>
+
+### Q2: Why Compile-Time Variable Checking?
+`template::validate()` rejects undeclared `{{var}}` references at build time. Why not just let Tera fail at render time?
+
+<details>
+<summary>Answer</summary>
+
+Tera's runtime error would say "variable `undefined_var` not found." jacq's compile-time check says "Undeclared template variable 'undefined_var' in skills/search.md — Declare it in plugin.yaml under 'vars:'." The compile-time check is better because: (1) it runs before any emission, failing fast; (2) it includes the file path and byte span for LSP integration; (3) it checks ALL variables across ALL bodies in one pass, not one-at-a-time during rendering; (4) it's a separate validation step that can be run without emitting (`jacq validate`).
+</details>
+
+### Q3: The `$ARGUMENTS` Distinction
+Claude Code uses `$ARGUMENTS` in skill bodies as a runtime variable. Why doesn't the template extractor treat `$ARGUMENTS` as a template variable?
+
+<details>
+<summary>Answer</summary>
+
+The extractor only looks for `{{...}}` patterns (Tera/Jinja2 syntax). `$ARGUMENTS` uses a `$` sigil which is Claude Code's own runtime substitution — it happens when the skill runs, not when jacq compiles. This is a deliberate two-level design: `{{var}}` is resolved at compile time by jacq (build-time), `$ARGUMENTS` is resolved at runtime by the host agent (run-time). They compose: `{{arguments_var}}` could compile to `$ARGUMENTS` for Claude Code and `$INPUT` for Codex.
+</details>
+
+### Q4: Target-Specific Values
+A VarDef has both `default` and `targets`. What happens when a body uses `{{var}}`, `var` has a default of "X", and the current target is Codex which has no override?
+
+<details>
+<summary>Answer</summary>
+
+The render function checks `var_def.targets.get(&target)` first. If Codex has no override, it falls back to `var_def.default`. If default is `Some("X")`, the rendered value is "X". If default is `None`, the value is an empty string (Tera treats missing variables as empty). The `required: true` flag on VarDef catches this at validation time — `MissingVariableValue` error — before rendering ever runs.
+</details>
+
+---
+
+*This guide will continue to grow as jacq evolves. Next: shared fragments (`{% include %}`), schema-driven content (`{{ schema_enum() }}`), and the LSP server.*
