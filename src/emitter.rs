@@ -9,7 +9,7 @@ use std::path::Path;
 
 use crate::error::{JacqError, Result};
 use crate::ir::*;
-use crate::targets::Target;
+use crate::targets::{self, FieldSupport, Target};
 use crate::template::RenderEngine;
 
 // ---------------------------------------------------------------------------
@@ -39,33 +39,117 @@ pub fn emit(ir: &PluginIR, output_dir: &Path) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Shared manifest builder — consults field_matrix for target-specific fields
+// ---------------------------------------------------------------------------
+
+/// Build a plugin manifest JSON object with only the fields this target supports.
+fn build_manifest_json(manifest: &PluginManifest, target: Target) -> serde_json::Value {
+    let fields = targets::field_matrix(target);
+    let has = |key: &str| fields.get(key) == Some(&FieldSupport::Yes);
+
+    let mut obj = serde_json::Map::new();
+
+    // Core identity
+    if has("name") {
+        obj.insert("name".into(), serde_json::json!(manifest.name));
+    }
+    if has("version") && manifest.version != "0.0.0" {
+        obj.insert("version".into(), serde_json::json!(manifest.version));
+    }
+    if has("description") && !manifest.description.is_empty() {
+        obj.insert("description".into(), serde_json::json!(manifest.description));
+    }
+    if has("author") {
+        let author_val = match &manifest.author {
+            Author::Name(n) if !n.is_empty() => Some(serde_json::json!({"name": n})),
+            Author::Structured { name, email, url } => {
+                let mut m = serde_json::Map::new();
+                m.insert("name".into(), serde_json::json!(name));
+                if let Some(e) = email {
+                    m.insert("email".into(), serde_json::json!(e));
+                }
+                if let Some(u) = url {
+                    m.insert("url".into(), serde_json::json!(u));
+                }
+                Some(serde_json::Value::Object(m))
+            }
+            _ => None,
+        };
+        if let Some(v) = author_val {
+            obj.insert("author".into(), v);
+        }
+    }
+    if has("license") {
+        if let Some(v) = &manifest.license {
+            obj.insert("license".into(), serde_json::json!(v));
+        }
+    }
+    if has("keywords") && !manifest.keywords.is_empty() {
+        obj.insert("keywords".into(), serde_json::json!(manifest.keywords));
+    }
+
+    // URLs
+    if has("homepage") {
+        if let Some(v) = &manifest.homepage {
+            obj.insert("homepage".into(), serde_json::json!(v));
+        }
+    }
+    if has("repository") {
+        if let Some(v) = &manifest.repository {
+            obj.insert("repository".into(), serde_json::json!(v));
+        }
+    }
+
+    // Cursor-specific
+    if has("displayName") {
+        if let Some(v) = &manifest.display_name {
+            obj.insert("displayName".into(), serde_json::json!(v));
+        }
+    }
+    if has("logo") {
+        if let Some(v) = &manifest.logo {
+            obj.insert("logo".into(), serde_json::json!(v));
+        }
+    }
+
+    // Codex-specific
+    if has("apps") {
+        if let Some(v) = &manifest.apps {
+            obj.insert("apps".into(), serde_json::json!(v));
+        }
+    }
+    if has("interface") {
+        if let Some(v) = &manifest.interface {
+            obj.insert("interface".into(), v.clone());
+        }
+    }
+
+    // OpenClaw-specific
+    if has("id") {
+        if let Some(v) = &manifest.id {
+            obj.insert("id".into(), serde_json::json!(v));
+        }
+    }
+    if has("configSchema") {
+        if let Some(v) = &manifest.config_schema {
+            obj.insert("configSchema".into(), v.clone());
+        }
+    }
+    if has("providers") {
+        if let Some(v) = &manifest.providers {
+            obj.insert("providers".into(), serde_json::json!(v));
+        }
+    }
+
+    serde_json::Value::Object(obj)
+}
+
+// ---------------------------------------------------------------------------
 // Claude Code emitter — identity/passthrough
 // ---------------------------------------------------------------------------
 
 fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
-    // plugin.json — core manifest
-    let plugin_json = serde_json::json!({
-        "name": ir.manifest.name,
-        "version": ir.manifest.version,
-        "description": ir.manifest.description,
-        "author": match &ir.manifest.author {
-            Author::Name(n) => serde_json::json!({"name": n}),
-            Author::Structured { name, email, url } => {
-                let mut m = serde_json::Map::new();
-                m.insert("name".to_string(), serde_json::Value::String(name.clone()));
-                if let Some(e) = email {
-                    m.insert("email".to_string(), serde_json::Value::String(e.clone()));
-                }
-                if let Some(u) = url {
-                    m.insert("url".to_string(), serde_json::Value::String(u.clone()));
-                }
-                serde_json::Value::Object(m)
-            }
-        },
-        "license": ir.manifest.license,
-        "keywords": ir.manifest.keywords,
-        "homepage": ir.manifest.homepage,
-    });
+    let plugin_json = build_manifest_json(&ir.manifest, Target::ClaudeCode);
     write_json(dir, "plugin.json", &plugin_json)?;
 
     // commands/*.md — skills with frontmatter
@@ -120,14 +204,7 @@ fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<
 // ---------------------------------------------------------------------------
 
 fn emit_opencode(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
-    // package.json — npm-style manifest
-    let package_json = serde_json::json!({
-        "name": ir.manifest.name,
-        "version": ir.manifest.version,
-        "description": ir.manifest.description,
-        "license": ir.manifest.license,
-        "keywords": ir.manifest.keywords,
-    });
+    let package_json = build_manifest_json(&ir.manifest, Target::OpenCode);
     write_json(dir, "package.json", &package_json)?;
 
     // AGENTS.md — combined instructions, skill docs, and agent descriptions
@@ -142,13 +219,7 @@ fn emit_opencode(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()>
 // ---------------------------------------------------------------------------
 
 fn emit_codex(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
-    // plugin.json — Codex-flavored manifest
-    let plugin_json = serde_json::json!({
-        "name": ir.manifest.name,
-        "version": ir.manifest.version,
-        "description": ir.manifest.description,
-        "license": ir.manifest.license,
-    });
+    let plugin_json = build_manifest_json(&ir.manifest, Target::Codex);
     write_json(dir, "plugin.json", &plugin_json)?;
 
     // skills/*.md — Codex has full skill support
@@ -173,16 +244,46 @@ fn emit_codex(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn emit_cursor(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
-    if !ir.instructions.is_empty() {
-        let content = render_instructions(&ir.instructions, engine)?;
-        write_file(&dir.join(".cursorrules"), &content)?;
+    // .cursor-plugin/plugin.json
+    let cursor_plugin_dir = dir.join(".cursor-plugin");
+    create_dir(&cursor_plugin_dir)?;
+    let plugin_json = build_manifest_json(&ir.manifest, Target::Cursor);
+    write_json(&cursor_plugin_dir, "plugin.json", &plugin_json)?;
+
+    // commands/*.md — skills with frontmatter
+    if !ir.skills.is_empty() {
+        let commands_dir = dir.join("commands");
+        create_dir(&commands_dir)?;
+        for skill in &ir.skills {
+            let content = render_skill_md(skill, engine)?;
+            write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
+        }
     }
 
+    // agents/*.md
+    if !ir.agents.is_empty() {
+        let agents_dir = dir.join("agents");
+        create_dir(&agents_dir)?;
+        for agent in &ir.agents {
+            let content = render_agent_md(agent, engine)?;
+            write_file(&agents_dir.join(format!("{}.md", agent.name)), &content)?;
+        }
+    }
+
+    // mcp.json — MCP server configuration
     if !ir.mcp_servers.is_empty() {
-        let cursor_dir = dir.join(".cursor");
-        create_dir(&cursor_dir)?;
         let mcp_config = render_mcp_json(&ir.mcp_servers);
-        write_json(&cursor_dir, "mcp.json", &mcp_config)?;
+        write_json(dir, "mcp.json", &mcp_config)?;
+    }
+
+    // rules/*.mdc — instructions as rules
+    if !ir.instructions.is_empty() {
+        let rules_dir = dir.join("rules");
+        create_dir(&rules_dir)?;
+        for instr in &ir.instructions {
+            let content = engine.render(&instr.body)?;
+            write_file(&rules_dir.join(format!("{}.mdc", instr.name)), &content)?;
+        }
     }
 
     Ok(())
@@ -193,15 +294,30 @@ fn emit_cursor(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 fn emit_openclaw(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
-    let package_json = serde_json::json!({
-        "name": ir.manifest.name,
-        "version": ir.manifest.version,
-        "description": ir.manifest.description,
-        "openclaw": {
-            "extensions": {}
+    // openclaw.plugin.json — native OpenClaw manifest
+    let manifest_json = build_manifest_json(&ir.manifest, Target::OpenClaw);
+    write_json(dir, "openclaw.plugin.json", &manifest_json)?;
+
+    // package.json — npm package
+    let mut pkg = serde_json::Map::new();
+    pkg.insert("name".into(), serde_json::json!(ir.manifest.name));
+    if ir.manifest.version != "0.0.0" {
+        pkg.insert("version".into(), serde_json::json!(ir.manifest.version));
+    }
+    if !ir.manifest.description.is_empty() {
+        pkg.insert("description".into(), serde_json::json!(ir.manifest.description));
+    }
+    write_json(dir, "package.json", &serde_json::Value::Object(pkg))?;
+
+    // skills/*.md
+    if !ir.skills.is_empty() {
+        let skills_dir = dir.join("skills");
+        create_dir(&skills_dir)?;
+        for skill in &ir.skills {
+            let content = render_skill_md(skill, engine)?;
+            write_file(&skills_dir.join(format!("{}.md", skill.name)), &content)?;
         }
-    });
-    write_json(dir, "package.json", &package_json)?;
+    }
 
     if !ir.instructions.is_empty() {
         let content = render_instructions(&ir.instructions, engine)?;
@@ -257,6 +373,7 @@ fn render_agent_md(agent: &AgentDef, engine: &RenderEngine) -> Result<String> {
     if let Some(v) = &fm.memory { out.insert("memory", yaml_value(v)?); }
     if let Some(v) = &fm.background { out.insert("background", yaml_value(v)?); }
     if let Some(v) = &fm.isolation { out.insert("isolation", yaml_value(v)?); }
+    if let Some(v) = &fm.readonly { out.insert("readonly", yaml_value(v)?); }
     if let Some(v) = &fm.color { out.insert("color", yaml_value(v)?); }
 
     let rendered_body = engine.render(&agent.body)?;
