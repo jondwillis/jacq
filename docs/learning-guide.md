@@ -685,4 +685,124 @@ For v0.1, binary pass/fail is sufficient. The diagnostic output tells the user w
 
 ---
 
-*This guide grows with each phase. Phase 6 (Dogfooding) will test jacq against real plugins.*
+## Phase 6: Dogfooding
+
+### What We Did
+
+We tested jacq against two real Claude Code plugins to validate the compiler end-to-end and discover IR gaps.
+
+#### notes-app-plugin (simple — committed as `examples/notes-app/`)
+
+1. **Import:** `jacq init examples/notes-app --from /Volumes/Sidecar/notes-app-plugin`
+   - jacq read the `.claude-plugin/plugin.json` and `commands/notes.md`
+   - Generated `plugin.yaml` with IR fields defaulted
+   - Copied skill files into `skills/`
+
+2. **Clean up manifest:** The auto-generated YAML had `email: null`, `requires: null`, `fallbacks: {}`. We hand-edited `plugin.yaml` to a cleaner form and added `targets: [claude-code, opencode, codex]` with a `requires` block.
+
+3. **Validate:** `jacq validate examples/notes-app` — confirmed 1 skill parsed, OpenCode has a warning (partial skill support), Claude Code and Codex are clean.
+
+4. **Inspect:** `jacq inspect examples/notes-app` — printed the capability matrix showing Full/Partial/None across all targets.
+
+5. **Build:** `jacq build examples/notes-app -o examples/notes-app/dist` — generated:
+   - `claude-code/plugin.json` + `commands/notes.md`
+   - `opencode/package.json` + `AGENTS.md`
+   - `codex/plugin.json` + `skills/notes.md` + `AGENTS.md`
+
+6. **Roundtrip:** `jacq validate examples/notes-app/dist/claude-code` — emitted Claude Code output parsed back successfully.
+
+#### kinelo-connect (complex — tested locally, not committed)
+
+1. **Cloned** the repo to `/tmp/` for inspection.
+
+2. **Analyzed** the directory structure: 5 skills (in `skills/<name>/SKILL.md` subdirectory pattern), 6 agents, 2 hooks (`SessionStart` + `Stop`), 1 HTTP MCP server, scripts.
+
+3. **Created IR by hand** in `/tmp/kinelo-ir/`:
+   - Wrote `plugin.yaml` with 3 targets, capability requirements, and fallback strategies
+   - Copied skills/agents, flattening from `skills/<name>/SKILL.md` to `skills/<name>.md`
+   - Modeled the HTTP MCP server as a command-based proxy (`npx @anthropic-ai/mcp-proxy <url>`)
+   - Wrote instructions summarizing usage
+
+4. **Validated + built** — 5 skills, 6 agents, 1 MCP server parsed. Fallbacks worked: agents on OpenCode/Codex showed as INFO (not errors). OpenCode AGENTS.md combined all skills and agents into a readable document.
+
+5. **Identified 6 IR gaps** — features kinelo uses that jacq can't yet represent:
+   - `SessionStart` hook event (not in our `HookEvent` enum)
+   - Prompt-type hooks (model evaluates a condition, not a shell command)
+   - HTTP MCP servers (`"type": "http"` with `url`, not `command` + `args`)
+   - Environment variable templates (`${VAR:-default}`)
+   - Plugin-relative paths (`${CLAUDE_PLUGIN_ROOT}`)
+   - Subdirectory skills (`skills/ask/SKILL.md` pattern)
+
+6. **Renamed to acme-connect**, stored locally with the directory gitignored.
+
+### What This Proved
+
+- The full pipeline works on real plugins, not just test fixtures
+- Fallback resolution is practically useful — agents degrade to AGENTS.md sections
+- The capability matrix in `jacq inspect` is immediately actionable
+- The roundtrip property (emit → parse) holds on real content
+- The IR has real gaps that drive the v0.2 roadmap
+
+---
+
+### Quiz: Phase 6
+
+### Q1: Import Hygiene
+When `jacq init --from` imported the notes-app-plugin, the generated `plugin.yaml` had `email: null`, `requires: null`, and `fallbacks: {}`. Why did serde produce these, and how should `jacq init` handle this better?
+
+<details>
+<summary>Answer</summary>
+
+Serde serializes all fields by default, including `Option<T>` as `null` and empty collections as `{}`. The `Author::Structured { name, email: None }` serializes with an explicit `email: null` because serde doesn't skip `None` fields unless told to with `#[serde(skip_serializing_if = "Option::is_none")]`. The fix: add `skip_serializing_if` attributes to optional fields in `PluginManifest`, or have `jacq init --from` use a hand-crafted YAML template instead of `serde_yaml::to_string`.
+</details>
+
+### Q2: The Proxy Workaround
+kinelo-connect uses an HTTP MCP server (`"type": "http"`, `"url": "https://..."`) but our IR only models command-based MCP servers. We worked around this by using `npx @anthropic-ai/mcp-proxy <url>`. What's the trade-off?
+
+<details>
+<summary>Answer</summary>
+
+The workaround adds a runtime dependency (`@anthropic-ai/mcp-proxy`) and an extra process hop (npx spawns a proxy that HTTP-connects to the server). The original plugin connects directly. This works but is slower to start and requires npm/Node.js on the user's machine. The proper fix is adding HTTP MCP server support to the IR: `McpServerDef` should be an enum with `Stdio { command, args, env }` and `Http { url, headers }` variants. MCP spec supports both transport types natively.
+</details>
+
+### Q3: Fallback Validation
+The kinelo IR declared `agents: agents-md-section` as a fallback for OpenCode. How does jacq verify this fallback is actually effective — i.e., that the AGENTS.md output includes the agent information?
+
+<details>
+<summary>Answer</summary>
+
+It doesn't — not yet. The analyzer checks that a fallback is *declared* and downgrades the diagnostic from Error to Info, but it doesn't verify the emitter actually *applies* the fallback. The `agents-md-section` strategy is implemented by `render_agents_md()` which includes agent descriptions in AGENTS.md, but there's no test that connects the declared fallback to the emitter behavior. A future improvement would be a post-emission validation step that checks whether each declared fallback was actually reflected in the output.
+</details>
+
+### Q4: Subdirectory Skills
+kinelo-connect uses `skills/ask/SKILL.md` (skill name from directory) while jacq expects `skills/ask.md` (name from filename). We flattened them manually during import. What would automatic handling look like in the parser?
+
+<details>
+<summary>Answer</summary>
+
+The parser's `walk_files()` already walks with `max_depth(2)`, so it sees files in subdirectories. The issue is naming: `skills/ask/SKILL.md` would produce name `"SKILL"` (from `file_stem`). The fix: if a file is named `SKILL.md` (or `COMMAND.md`, `AGENT.md`), derive the name from the parent directory instead of the filename. This matches Claude Code's own convention where `skills/ask/SKILL.md` creates a skill named "ask".
+</details>
+
+### Q5: The Roundtrip Property
+We verified that `jacq build → jacq validate` works on emitted Claude Code output. What specific things could break this roundtrip, and why is it the single most important property of the compiler?
+
+<details>
+<summary>Answer</summary>
+
+Things that break the roundtrip: (1) The emitter generates frontmatter YAML that the parser can't re-parse (e.g., different quoting, indentation, or key ordering). (2) The emitter places files in directories the parser doesn't search (e.g., `skills/` vs `commands/`). (3) The emitter generates a `plugin.json` with fields the parser's serde model rejects.
+
+It's the most important property because it's a *self-consistency check* — it proves the emitter and parser agree on the format. If the roundtrip breaks, either the emitter is producing invalid output (users get broken plugins) or the parser is too strict (it rejects valid plugins). Every other test checks individual components; the roundtrip tests the system.
+</details>
+
+### Q6: Why Not Commit kinelo-connect?
+We renamed kinelo-connect to acme-connect and gitignored it. Beyond proprietary concerns, what technical value does having a complex local-only example provide during development?
+
+<details>
+<summary>Answer</summary>
+
+It serves as a regression test for complex features without polluting the public test suite. Every time a developer changes the parser, analyzer, or emitter, they can run `jacq build examples/acme-connect` to verify the change doesn't break a real-world complex plugin. The notes-app example (committed) is too simple to catch most regressions — it has 1 skill, no agents, no hooks, no MCP. The acme-connect example (local) exercises 5 skills, 6 agents, 1 MCP server, and fallback strategies. It's the difference between a unit test and an integration test against production data.
+</details>
+
+---
+
+*This guide will continue to grow as jacq evolves. See `research/dogfooding-findings.md` for the full gap analysis driving v0.2.*
