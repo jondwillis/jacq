@@ -1,0 +1,24 @@
+ir_version: "0.1"
+name: feature-dev
+version: "1.0.0"
+description: "Feature development workflow with specialized agents"
+author:
+  name: Anthropic
+  email: support@anthropic.com
+license: MIT
+targets: [claude-code, codex, opencode]
+
+vars:
+  project_name:
+    description: "Name of the project being worked on"
+    default: "the project"
+  arguments_var:
+    description: "Platform-specific argument variable"
+    targets:
+      claude-code: "$ARGUMENTS"
+      codex: "$INPUT"
+      opencode: "${args}"
+
+fallbacks:
+  agents:
+    opencode: instruction-based

@@ -60,10 +60,12 @@ pub struct PluginManifest {
     /// Plugin identifier (kebab-case)
     pub name: String,
 
-    /// Semantic version
+    /// Semantic version (optional — Claude Code plugins often omit this)
+    #[serde(default = "default_version")]
     pub version: String,
 
     /// Short description
+    #[serde(default)]
     pub description: String,
 
     /// Author — either a string or structured { name, email }.
@@ -102,6 +104,10 @@ pub struct PluginManifest {
     /// Skills/agents/instructions can reference these via `{{var_name}}`.
     #[serde(default)]
     pub vars: BTreeMap<String, VarDef>,
+}
+
+fn default_version() -> String {
+    "0.0.0".to_string()
 }
 
 // ---------------------------------------------------------------------------

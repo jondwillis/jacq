@@ -151,17 +151,17 @@ author: "Jon Willis"
     }
 
     #[test]
-    fn missing_version_fails() {
+    fn missing_version_defaults() {
         let json = r#"{ "name": "test", "description": "test" }"#;
-        let result: Result<PluginManifest, _> = serde_json::from_str(json);
-        assert!(result.is_err(), "manifest without version should fail");
+        let result: PluginManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(result.version, "0.0.0");
     }
 
     #[test]
-    fn missing_description_fails() {
+    fn missing_description_defaults() {
         let json = r#"{ "name": "test", "version": "1.0.0" }"#;
-        let result: Result<PluginManifest, _> = serde_json::from_str(json);
-        assert!(result.is_err(), "manifest without description should fail");
+        let result: PluginManifest = serde_json::from_str(json).unwrap();
+        assert_eq!(result.description, "");
     }
 }
 
