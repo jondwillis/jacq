@@ -1099,4 +1099,237 @@ Yes to the first — nested includes work because all shared fragments are regis
 
 ---
 
+## Multi-Target Conformance: Field Matrix & Roundtrip Testing
+
+### The Problem: Targets Diverge
+
+jacq compiles plugins for 5 targets, but they don't all use the same manifest fields:
+
+```
+Claude Code:  name, version, description, author, license, keywords, homepage, repository, userConfig, channels, ...
+Cursor:       name, version, description, author, license, keywords, displayName, logo, ...
+Codex:        name, version, description, author, license, keywords, apps, interface, ...
+OpenClaw:     name, version, description, id, configSchema, providers, channels, skills, ...
+OpenCode:     name, version, description, license, agents, mcpServers, lsp, ...
+```
+
+The IR (`PluginManifest`) is the superset — it holds *every* field from *every* target. But each emitter must only output the fields its target understands. Without a systematic answer, each emitter hardcodes which fields to include, and new fields require updating each emitter individually.
+
+### The Field Matrix
+
+The solution follows the same pattern as the capability matrix. In `src/targets.rs`:
+
+```rust
+pub const MANIFEST_FIELD_KEYS: &[&str] = &[
+    "name", "version", "description", "author", "license", "keywords",
+    "homepage", "repository",
+    "commands", "agents", "skills", "hooks", "mcpServers", "outputStyles", "lspServers",
+    "userConfig", "channels",
+    "displayName", "logo",       // Cursor-specific
+    "apps", "interface",          // Codex-specific
+    "id", "configSchema", "providers",  // OpenClaw-specific
+];
+
+pub fn field_matrix(target: Target) -> BTreeMap<String, FieldSupport> {
+    use FieldSupport::*;
+    match target {
+        //                    name ver  desc auth lic  kw   home repo cmds agts ...  dNam logo apps intf id   cSch prov
+        Target::ClaudeCode => [Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, ... No,  No,  No,  No,  No,  No,  No],
+        Target::Cursor     => [Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  Yes, Yes, ... Yes, Yes, No,  No,  No,  No,  No],
+        Target::Codex      => [Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  No,  No,  ... No,  No,  Yes, Yes, No,  No,  No],
+        Target::OpenClaw   => [Yes, Yes, Yes, No,  No,  No,  No,  No,  No,  No,  ... No,  No,  No,  No,  Yes, Yes, Yes],
+        // ...
+    }
+}
+```
+
+The emitter consults this matrix via `build_manifest_json()`:
+
+```rust
+fn build_manifest_json(manifest: &PluginManifest, target: Target) -> serde_json::Value {
+    let fields = targets::field_matrix(target);
+    let has = |key: &str| fields.get(key) == Some(&FieldSupport::Yes);
+
+    let mut obj = serde_json::Map::new();
+    if has("name") { obj.insert("name".into(), json!(manifest.name)); }
+    if has("displayName") {
+        if let Some(v) = &manifest.display_name { obj.insert("displayName".into(), json!(v)); }
+    }
+    // ... each field checked against the matrix
+    serde_json::Value::Object(obj)
+}
+```
+
+All 5 emitters call `build_manifest_json(&ir.manifest, target)` — no more per-emitter hardcoded JSON. Adding a new field means: (1) add it to `PluginManifest`, (2) add a row to `MANIFEST_FIELD_KEYS`, (3) mark Yes/No per target in `field_matrix()`, (4) add the emission logic in `build_manifest_json()`. One place per concern.
+
+### Multi-Format Parser
+
+jacq now auto-detects plugin manifests from any target:
+
+```rust
+fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
+    // IR format: plugin.yaml
+    // Claude Code: .claude-plugin/plugin.json
+    // Cursor: .cursor-plugin/plugin.json
+    // Codex: .codex-plugin/plugin.json
+    // OpenClaw: openclaw.plugin.json
+    // Fallback: plugin.json at root
+}
+```
+
+This means `jacq inspect` works on any vendor plugin regardless of target:
+
+```
+$ jacq inspect vendor/cursor-marketplace-template/plugins/design
+Plugin: design v0.1.0
+  Design workflows for wireframes, component design, and production-ready mockups.
+
+Content:
+  Skills: 4  (component-design, production-mockup, ux-review, wireframe)
+  Agents: 1  (design-system-reviewer)
+```
+
+### deny_unknown_fields: Catching Spec Drift
+
+All frontmatter structs use `#[serde(deny_unknown_fields)]`:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct AgentFrontmatter {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub max_turns: Option<u64>,
+    pub tools: Option<StringOrVec>,
+    pub disallowed_tools: Option<StringOrVec>,
+    pub skills: Option<StringOrVec>,
+    pub memory: Option<serde_yaml::Value>,
+    pub background: Option<serde_yaml::Value>,
+    pub isolation: Option<String>,
+    pub readonly: Option<bool>,
+    pub color: Option<String>,
+}
+```
+
+If a new Cursor plugin uses `maxTokens: 4000` in agent frontmatter and we haven't added it yet, parsing *fails* with:
+
+```
+unknown field `maxTokens`, expected one of `name`, `description`, `model`, ...
+```
+
+This is intentional — the compiler forces you to handle every field rather than silently dropping data. When `git submodule update` pulls new vendor plugins, the roundtrip tests catch the drift immediately.
+
+### Roundtrip Testing: 44 Plugins Across 2 Targets
+
+The roundtrip test pipeline: parse original → IR → emit for native target → compare with original.
+
+```rust
+fn roundtrip_plugin(plugin_dir: &Path) -> Result<(), String> {
+    let mut ir = try_parse(plugin_dir)?;
+
+    // Auto-detect target from manifest location
+    let target = detect_target(plugin_dir);  // CC, Cursor, Codex, OpenClaw
+    ir.manifest.targets = vec![target];
+
+    template::extract_all(&mut ir);
+    emitter::emit(&ir, tmp.path())?;
+
+    // Compare: manifest fields match, commands/*.md match, agents/*.md match
+    plugin_json_matches(&orig_json, &emit_json)?;
+    compare_md_dir(&orig_cmds, &emit_cmds)?;
+    compare_md_dir(&orig_agents, &emit_agents)?;
+}
+```
+
+Comparison is semantic, not byte-for-byte: YAML frontmatter fields can reorder, `"true"` strings match `true` booleans, emitted JSON may add null fields the original omitted.
+
+Current corpus:
+
+| Source | Target | Plugins | Status |
+|--------|--------|---------|--------|
+| `vendor/claude-plugins-official` (official) | Claude Code | 20 | ✅ roundtrip |
+| `vendor/claude-plugins-official` (external) | Claude Code | 17 | ✅ roundtrip |
+| `vendor/cursor-marketplace-template` | Cursor | 7 | ✅ roundtrip |
+| `vendor/codex` | Codex | 4 skills | parse only (no manifest) |
+| `vendor/openclaw` | OpenClaw | 98 | parse only (different manifest) |
+
+### Lenient Parsing: Real-World Resilience
+
+Real plugins have messy YAML. The parser handles two common issues:
+
+**Unquoted colons** — `description: Use this: it helps` breaks YAML parsing. `sanitize_yaml()` detects values with internal colons and wraps them in quotes:
+
+```rust
+fn sanitize_yaml(yaml: &str) -> String {
+    yaml.lines().map(|line| {
+        if let Some(colon_pos) = line.find(": ") {
+            let value = &line[colon_pos + 2..];
+            if value.trim().contains(": ") || value.contains('<') {
+                let escaped = value.trim().replace('"', r#"\""#);
+                return format!("{}: \"{escaped}\"", &line[..colon_pos]);
+            }
+        }
+        line.to_string()
+    }).collect::<Vec<_>>().join("\n")
+}
+```
+
+**String booleans** — `hide-from-slash-command-tool: "true"` is a string, not a boolean. `LenientBool` accepts both:
+
+```rust
+pub struct LenientBool(pub bool);
+
+impl<'de> serde::Deserialize<'de> for LenientBool {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> {
+        // Accepts true, false, "true", "false"
+    }
+}
+```
+
+These are necessary because the 44 real-world plugins we test against contain both patterns.
+
+---
+
+### Quiz: Multi-Target Conformance
+
+### Q1: Why a Matrix, Not Per-Emitter Logic?
+Each emitter could just hardcode which fields to include. Why add the field matrix abstraction?
+
+<details>
+<summary>Answer</summary>
+
+Three reasons: (1) **Single source of truth** — when Cursor adds a new manifest field, you update one row in `field_matrix()`, not 5 emitter functions. (2) **Inspectable** — `jacq inspect` can show a field compatibility table just like it shows the capability matrix, letting plugin authors see which fields apply where. (3) **Testable** — you can write a test that verifies every field in `MANIFEST_FIELD_KEYS` appears in at least one target's matrix, catching orphaned fields.
+</details>
+
+### Q2: Why deny_unknown_fields Instead of #[serde(flatten)]?
+The original code used `#[serde(flatten)] pub extra: BTreeMap<String, Value>` to catch unknown fields. Why did we remove that?
+
+<details>
+<summary>Answer</summary>
+
+`flatten` silently accepts any field — typos, deprecated fields, fields from a newer spec version. The data survives the roundtrip (it's in `extra`) but it's untyped and invisible to the analyzer and emitter. With `deny_unknown_fields`, a new field is a *compile-time* event: the parser fails, the test suite catches it, and a human must add the field with its type and target mapping. This is the "a compiler must not silently rewrite input" principle from jacq's design.
+</details>
+
+### Q3: The Superset IR
+The IR struct has fields for every target (`displayName`, `apps`, `configSchema`, etc.) even though most are `None` for most plugins. Is this wasteful?
+
+<details>
+<summary>Answer</summary>
+
+No — `Option<String>` is 24 bytes (pointer + length + discriminant) and `Option<None>` is zero-cost in practice (just the discriminant). For a compiler that processes at most a few hundred files, memory isn't the constraint. The real value is that the IR is *one type* — every function in the pipeline (`parse → extract → validate → analyze → emit`) takes `&PluginIR` without caring which target it came from or is going to. A target-specific IR per platform would require generic parameters or trait objects everywhere, adding complexity with no performance benefit at this scale.
+</details>
+
+### Q4: Roundtrip vs Schema Validation
+We test by roundtripping real plugins. Why not validate emitted output against a JSON Schema instead?
+
+<details>
+<summary>Answer</summary>
+
+Roundtripping is strictly stronger. A JSON Schema tells you "this field should be a string" — it validates structure. Roundtripping tells you "this field should be `'Anthropic'`, and this command should have description `'Search the codebase'`, and the body should contain exactly this markdown." It validates *content preservation*. Also, no target publishes an official JSON Schema we can depend on (Anthropic's is prose, Codex's is Rust structs, OpenClaw's is docs). The 44 real plugins ARE the spec — they're what actually works in production.
+</details>
+
+---
+
 *Next: schema-driven content (`{{ schema_enum() }}`), priority-based composition, and the LSP server.*
