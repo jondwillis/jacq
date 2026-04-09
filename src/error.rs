@@ -70,6 +70,27 @@ pub enum JacqError {
     #[error("Serialization error: {reason}")]
     #[diagnostic(code(jacq::serialization))]
     Serialization { reason: String },
+
+    #[error("Undeclared template variable '{{{{{}}}}}' in {}", name, path.display())]
+    #[diagnostic(
+        code(jacq::undeclared_variable),
+        help("Declare it in plugin.yaml under 'vars:'")
+    )]
+    UndeclaredVariable {
+        name: String,
+        path: PathBuf,
+        span: (usize, usize),
+    },
+
+    #[error("Required variable '{name}' has no value for target '{target}'")]
+    #[diagnostic(
+        code(jacq::missing_variable_value),
+        help("Add a default value or a target-specific value under 'vars.{name}.targets.{target}:'")
+    )]
+    MissingVariableValue {
+        name: String,
+        target: Target,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, JacqError>;

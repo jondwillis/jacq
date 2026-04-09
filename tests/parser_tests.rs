@@ -54,7 +54,7 @@ mod claude_code_native {
     fn parses_skill_body() {
         let ir = parse_plugin(&fixture("claude-code-plugin")).unwrap();
         let greet = ir.skills.iter().find(|s| s.name == "greet").unwrap();
-        assert!(greet.body.contains("$ARGUMENTS"));
+        assert!(greet.body.as_raw().contains("$ARGUMENTS"));
     }
 
     #[test]
@@ -139,7 +139,7 @@ mod ir_format {
             Some("Code review agent")
         );
         assert_eq!(ir.agents[0].frontmatter.model.as_deref(), Some("sonnet"));
-        assert!(ir.agents[0].body.contains("code review agent"));
+        assert!(ir.agents[0].body.as_raw().contains("code review agent"));
     }
 
     #[test]
@@ -169,7 +169,7 @@ mod ir_format {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
         assert_eq!(ir.instructions.len(), 1);
         assert_eq!(ir.instructions[0].name, "rules");
-        assert!(ir.instructions[0].body.contains("Always write tests"));
+        assert!(ir.instructions[0].body.as_raw().contains("Always write tests"));
     }
 
     #[test]
@@ -254,6 +254,6 @@ mod real_plugins {
             .as_ref()
             .unwrap()
             .contains("Notes.app"));
-        assert!(notes.body.contains("AppleScript"));
+        assert!(notes.body.as_raw().contains("AppleScript"));
     }
 }

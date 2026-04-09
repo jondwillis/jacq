@@ -222,7 +222,7 @@ fn parse_md_files(dir: &Path, subdir: &str, _format: &ManifestFormat) -> Result<
             name,
             source_path: rel_path,
             frontmatter,
-            body: body.to_string(),
+            body: body.to_string().into(),
         });
     }
 
@@ -264,7 +264,7 @@ fn parse_agent_files(dir: &Path) -> Result<Vec<AgentDef>> {
             name,
             source_path: rel_path,
             frontmatter,
-            body: body.to_string(),
+            body: body.to_string().into(),
         });
     }
 
@@ -358,7 +358,7 @@ fn parse_instruction_files(dir: &Path) -> Result<Vec<InstructionDef>> {
         instructions.push(InstructionDef {
             name,
             source_path: rel_path,
-            body: content,
+            body: content.into(),
         });
     }
 

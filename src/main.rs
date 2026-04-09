@@ -7,6 +7,7 @@ use jacq::cli;
 use jacq::emitter;
 use jacq::parser;
 use jacq::targets::Target;
+use jacq::template;
 
 fn main() {
     let cli = cli::Cli::parse();
@@ -124,7 +125,17 @@ fn cmd_validate(
     path: &std::path::Path,
     target: Option<Target>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ir = parser::parse_plugin(path)?;
+    let mut ir = parser::parse_plugin(path)?;
+    template::extract_all(&mut ir);
+
+    // Validate template variables
+    let template_errors = template::validate(&ir);
+    if !template_errors.is_empty() {
+        for err in &template_errors {
+            eprintln!("  [ERROR] {err}");
+        }
+        return Err(format!("{} template error(s)", template_errors.len()).into());
+    }
     println!(
         "Parsed '{}' v{} ({} skill(s), {} agent(s), {} hook(s), {} MCP server(s))",
         ir.manifest.name,
@@ -186,6 +197,15 @@ fn cmd_build(
     output: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut ir = parser::parse_plugin(path)?;
+    template::extract_all(&mut ir);
+
+    let template_errors = template::validate(&ir);
+    if !template_errors.is_empty() {
+        for err in &template_errors {
+            eprintln!("  [ERROR] {err}");
+        }
+        return Err(format!("{} template error(s)", template_errors.len()).into());
+    }
 
     if let Some(t) = target {
         ir.manifest.targets = vec![t];

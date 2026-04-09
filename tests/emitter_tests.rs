@@ -30,6 +30,7 @@ fn ir_manifest(name: &str, targets: Vec<Target>) -> PluginManifest {
         targets,
         requires: None,
         fallbacks: BTreeMap::new(),
+        vars: BTreeMap::new(),
     }
 }
 
@@ -48,7 +49,7 @@ fn sample_skill() -> SkillDef {
             examples: None,
             extra: BTreeMap::new(),
         },
-        body: "Search for: $ARGUMENTS\n".to_string(),
+        body: "Search for: $ARGUMENTS\n".into(),
     }
 }
 
@@ -66,7 +67,7 @@ fn sample_agent() -> AgentDef {
             color: None,
             extra: BTreeMap::new(),
         },
-        body: "Review the code for quality.\n".to_string(),
+        body: "Review the code for quality.\n".into(),
     }
 }
 
@@ -85,7 +86,7 @@ fn sample_instruction() -> InstructionDef {
     InstructionDef {
         name: "rules".to_string(),
         source_path: PathBuf::from("instructions/rules.md"),
-        body: "Always write tests first.\nKeep functions short.\n".to_string(),
+        body: "Always write tests first.\nKeep functions short.\n".into(),
     }
 }
 

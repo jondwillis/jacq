@@ -26,6 +26,7 @@ fn minimal_manifest(name: &str, targets: Vec<Target>) -> PluginManifest {
         targets,
         requires: None,
         fallbacks: BTreeMap::new(),
+        vars: BTreeMap::new(),
     }
 }
 
@@ -47,7 +48,7 @@ fn skill(name: &str) -> SkillDef {
         name: name.to_string(),
         source_path: PathBuf::from(format!("skills/{name}.md")),
         frontmatter: SkillFrontmatter::default(),
-        body: "test".to_string(),
+        body: "test".into(),
     }
 }
 
@@ -56,7 +57,7 @@ fn agent(name: &str) -> AgentDef {
         name: name.to_string(),
         source_path: PathBuf::from(format!("agents/{name}.md")),
         frontmatter: AgentFrontmatter::default(),
-        body: "test".to_string(),
+        body: "test".into(),
     }
 }
 
@@ -172,7 +173,7 @@ mod inference {
         ir.instructions.push(InstructionDef {
             name: "rules".to_string(),
             source_path: PathBuf::from("instructions/rules.md"),
-            body: "Be nice".to_string(),
+            body: "Be nice".into(),
         });
 
         let report = analyze(&ir);

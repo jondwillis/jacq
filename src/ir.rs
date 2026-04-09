@@ -94,6 +94,11 @@ pub struct PluginManifest {
     /// Keys are typed Capability values — typos are caught at parse time.
     #[serde(default)]
     pub fallbacks: BTreeMap<Capability, BTreeMap<Target, FallbackStrategy>>,
+
+    /// Template variable declarations.
+    /// Skills/agents/instructions can reference these via `{{var_name}}`.
+    #[serde(default)]
+    pub vars: BTreeMap<String, VarDef>,
 }
 
 // ---------------------------------------------------------------------------
@@ -277,8 +282,8 @@ pub struct SkillDef {
     /// Parsed YAML frontmatter
     pub frontmatter: SkillFrontmatter,
 
-    /// Markdown body (the instruction template)
-    pub body: String,
+    /// Markdown body — plain text or template with `{{variable}}` refs
+    pub body: BodyContent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -312,7 +317,7 @@ pub struct AgentDef {
     pub name: String,
     pub source_path: PathBuf,
     pub frontmatter: AgentFrontmatter,
-    pub body: String,
+    pub body: BodyContent,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -386,7 +391,7 @@ pub struct McpServerDef {
 pub struct InstructionDef {
     pub name: String,
     pub source_path: PathBuf,
-    pub body: String,
+    pub body: BodyContent,
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +402,93 @@ pub struct InstructionDef {
 pub struct TargetOverride {
     pub path: PathBuf,
     pub content: Vec<u8>,
+}
+
+// ---------------------------------------------------------------------------
+// Body content — plain text or parsed template
+// ---------------------------------------------------------------------------
+
+/// The body of a skill, agent, or instruction definition.
+///
+/// `Plain` bodies are opaque strings — no template processing.
+/// `Template` bodies have been scanned for `{{variable}}` references.
+/// Bodies without `{{` are always `Plain` — zero overhead for existing plugins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum BodyContent {
+    Plain(String),
+    Template(TemplateBody),
+}
+
+/// A body that contains `{{variable}}` template references.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateBody {
+    /// The raw template string (before variable substitution)
+    pub raw: String,
+    /// Extracted variable references with byte-offset spans
+    #[serde(skip)]
+    pub variables: Vec<VariableRef>,
+}
+
+/// A reference to a `{{variable}}` in a template body.
+#[derive(Debug, Clone)]
+pub struct VariableRef {
+    /// Variable name (without the `{{ }}` delimiters)
+    pub name: String,
+    /// Byte offsets (start, end) in the raw template string, covering `{{name}}`
+    pub span: (usize, usize),
+}
+
+impl BodyContent {
+    /// Get the raw text content, regardless of whether it's Plain or Template.
+    pub fn as_raw(&self) -> &str {
+        match self {
+            BodyContent::Plain(s) => s,
+            BodyContent::Template(t) => &t.raw,
+        }
+    }
+
+    /// True if this body contains template variables.
+    pub fn has_variables(&self) -> bool {
+        matches!(self, BodyContent::Template(t) if !t.variables.is_empty())
+    }
+}
+
+/// Allows `body: "text".into()` for backwards-compatible construction.
+impl From<String> for BodyContent {
+    fn from(s: String) -> Self {
+        BodyContent::Plain(s)
+    }
+}
+
+impl From<&str> for BodyContent {
+    fn from(s: &str) -> Self {
+        BodyContent::Plain(s.to_string())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Template variable declarations
+// ---------------------------------------------------------------------------
+
+/// A declared template variable in plugin.yaml.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VarDef {
+    /// Human-readable description of what this variable is for
+    #[serde(default)]
+    pub description: Option<String>,
+
+    /// Default value (used when no target-specific override exists)
+    #[serde(default)]
+    pub default: Option<String>,
+
+    /// If true, the variable must have a value (default or target-specific) for every target
+    #[serde(default)]
+    pub required: bool,
+
+    /// Per-target value overrides
+    #[serde(default)]
+    pub targets: BTreeMap<Target, String>,
 }
 
 // ---------------------------------------------------------------------------
