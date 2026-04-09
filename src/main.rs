@@ -165,7 +165,7 @@ fn cmd_validate(
         {
             continue;
         }
-        let status = if summary.compatible { "OK" } else { "FAIL" };
+        let status = if summary.compatible() { "OK" } else { "FAIL" };
         println!(
             "  {target_name}: {status} ({} error(s), {} warning(s))",
             summary.error_count, summary.warning_count
@@ -296,7 +296,7 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
 
     println!();
     for (target_name, summary) in &report.target_summaries {
-        let status = if summary.compatible { "Compatible" } else { "Incompatible" };
+        let status = if summary.compatible() { "Compatible" } else { "Incompatible" };
         println!(
             "  {target_name}: {status} ({} error(s), {} warning(s))",
             summary.error_count, summary.warning_count

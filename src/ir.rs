@@ -90,9 +90,10 @@ pub struct PluginManifest {
     #[serde(default)]
     pub requires: Option<Requirements>,
 
-    /// Graceful degradation strategies per capability per target
+    /// Graceful degradation strategies per capability per target.
+    /// Keys are typed Capability values — typos are caught at parse time.
     #[serde(default)]
-    pub fallbacks: BTreeMap<String, BTreeMap<Target, FallbackStrategy>>,
+    pub fallbacks: BTreeMap<Capability, BTreeMap<Target, FallbackStrategy>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -339,6 +340,7 @@ pub struct AgentFrontmatter {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookDef {
     pub name: String,
+    #[serde(skip)]
     pub source_path: PathBuf,
     pub event: HookEvent,
     pub command: String,
@@ -365,6 +367,7 @@ pub enum HookEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerDef {
     pub name: String,
+    #[serde(skip)]
     pub source_path: PathBuf,
     pub command: String,
     #[serde(default)]

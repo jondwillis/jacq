@@ -1,5 +1,4 @@
 name: db-server
-source_path: mcp/db-server.yaml
 command: npx
 args:
   - "-y"

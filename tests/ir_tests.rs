@@ -85,8 +85,9 @@ fallbacks:
         assert_eq!(reqs.capabilities.len(), 3);
         assert_eq!(reqs.permissions.len(), 2);
 
-        assert!(manifest.fallbacks.contains_key("hooks.pre-tool-use"));
-        let hook_fallbacks = &manifest.fallbacks["hooks.pre-tool-use"];
+        let hook_cap = Capability::try_from("hooks.pre-tool-use".to_string()).unwrap();
+        assert!(manifest.fallbacks.contains_key(&hook_cap));
+        let hook_fallbacks = &manifest.fallbacks[&hook_cap];
         assert!(hook_fallbacks.contains_key(&Target::OpenCode));
         assert!(hook_fallbacks.contains_key(&Target::Cursor));
     }

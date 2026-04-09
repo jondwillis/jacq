@@ -14,9 +14,6 @@ use crate::targets::{capability_matrix, SupportLevel, Target};
 // ---------------------------------------------------------------------------
 
 /// Analyze a plugin IR against its declared targets.
-///
-/// Returns a report with diagnostics (errors, warnings, info) and per-target
-/// compatibility summaries.
 pub fn analyze(ir: &PluginIR) -> AnalysisReport {
     let inferred = infer_capabilities(ir);
 
@@ -38,17 +35,16 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
 
         for cap_key in &inferred {
             let support = matrix.get(cap_key.as_str()).copied().unwrap_or(SupportLevel::None);
-            let fallback = ir
-                .manifest
-                .fallbacks
-                .get(cap_key.as_str())
+
+            // Look up fallback: try parsing the key as a Capability for typed lookup
+            let fallback = Capability::try_from(cap_key.clone())
+                .ok()
+                .and_then(|cap| ir.manifest.fallbacks.get(&cap))
                 .and_then(|m| m.get(target));
 
             match (support, fallback) {
-                // Fully supported — no diagnostic needed
                 (SupportLevel::Full, _) => {}
 
-                // Not supported, but fallback declared — info
                 (SupportLevel::None, Some(fb)) => {
                     diagnostics.push(Diagnostic {
                         target: *target,
@@ -62,7 +58,6 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
                     });
                 }
 
-                // Not supported, no fallback — error
                 (SupportLevel::None, None) => {
                     error_count += 1;
                     diagnostics.push(Diagnostic {
@@ -76,7 +71,6 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
                     });
                 }
 
-                // Partial/Flags support, fallback declared — info
                 (SupportLevel::Partial | SupportLevel::Flags, Some(fb)) => {
                     diagnostics.push(Diagnostic {
                         target: *target,
@@ -90,7 +84,6 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
                     });
                 }
 
-                // Partial/Flags support, no fallback — warning
                 (SupportLevel::Partial | SupportLevel::Flags, None) => {
                     warning_count += 1;
                     diagnostics.push(Diagnostic {
@@ -110,7 +103,6 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
         summaries.insert(
             *target,
             TargetSummary {
-                compatible: error_count == 0,
                 error_count,
                 warning_count,
             },
@@ -128,7 +120,6 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
 // Capability inference
 // ---------------------------------------------------------------------------
 
-/// Infer which capabilities a plugin actually uses based on its content.
 fn infer_capabilities(ir: &PluginIR) -> BTreeSet<String> {
     let mut caps = BTreeSet::new();
 
@@ -141,8 +132,6 @@ fn infer_capabilities(ir: &PluginIR) -> BTreeSet<String> {
     }
 
     if !ir.hooks.is_empty() {
-        // Infer specific hook capabilities rather than the parent "hooks".
-        // This lets targets and fallbacks address individual hook types precisely.
         for hook in &ir.hooks {
             let key = match hook.event {
                 HookEvent::PreToolUse => "hooks.pre-tool-use",
@@ -151,7 +140,6 @@ fn infer_capabilities(ir: &PluginIR) -> BTreeSet<String> {
             };
             caps.insert(key.to_string());
         }
-        // Only infer parent "hooks" if no specific events were identified
         if !caps.iter().any(|k| k.starts_with("hooks.")) {
             caps.insert("hooks".to_string());
         }
@@ -214,41 +202,27 @@ pub struct AnalysisReport {
 }
 
 impl AnalysisReport {
-    /// True if there are no errors (warnings and info are OK).
     pub fn is_ok(&self) -> bool {
         !self.diagnostics.iter().any(|d| d.severity == Severity::Error)
     }
 
-    /// Iterate over error diagnostics.
     pub fn errors(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics
-            .iter()
-            .filter(|d| d.severity == Severity::Error)
+        self.diagnostics.iter().filter(|d| d.severity == Severity::Error)
     }
 
-    /// Iterate over warning diagnostics.
     pub fn warnings(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics
-            .iter()
-            .filter(|d| d.severity == Severity::Warning)
+        self.diagnostics.iter().filter(|d| d.severity == Severity::Warning)
     }
 
-    /// Iterate over info diagnostics.
     pub fn infos(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics
-            .iter()
-            .filter(|d| d.severity == Severity::Info)
+        self.diagnostics.iter().filter(|d| d.severity == Severity::Info)
     }
 
-    /// Diagnostics for a specific target.
     pub fn for_target(&self, target: Target) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics
-            .iter()
-            .filter(move |d| d.target == target)
+        self.diagnostics.iter().filter(move |d| d.target == target)
     }
 }
 
-/// A single diagnostic finding.
 #[derive(Debug)]
 pub struct Diagnostic {
     pub target: Target,
@@ -257,7 +231,6 @@ pub struct Diagnostic {
     pub message: String,
 }
 
-/// Diagnostic severity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -266,7 +239,6 @@ pub enum Severity {
 }
 
 impl Severity {
-    /// Fixed-width label for diagnostic output (5 chars, right-padded).
     pub fn label(self) -> &'static str {
         match self {
             Severity::Error => "ERROR",
@@ -279,10 +251,13 @@ impl Severity {
 /// Per-target compatibility summary.
 #[derive(Debug)]
 pub struct TargetSummary {
-    /// True if no errors (warnings are acceptable)
-    pub compatible: bool,
-    /// Number of error-level diagnostics
     pub error_count: usize,
-    /// Number of warning-level diagnostics
     pub warning_count: usize,
+}
+
+impl TargetSummary {
+    /// True if no errors (warnings are acceptable).
+    pub fn compatible(&self) -> bool {
+        self.error_count == 0
+    }
 }

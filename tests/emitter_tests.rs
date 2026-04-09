@@ -331,7 +331,7 @@ mod integration {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
         let report = analyze(&ir);
         // Claude Code should be compatible
-        assert!(report.target_summaries[&Target::ClaudeCode].compatible);
+        assert!(report.target_summaries[&Target::ClaudeCode].compatible());
 
         let tmp = TempDir::new().unwrap();
         emit(&ir, tmp.path()).unwrap();

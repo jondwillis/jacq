@@ -113,7 +113,8 @@ mod ir_format {
     #[test]
     fn parses_fallbacks() {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
-        assert!(ir.manifest.fallbacks.contains_key("hooks.pre-tool-use"));
+        let hook_cap = jacq::ir::Capability::try_from("hooks.pre-tool-use".to_string()).unwrap();
+        assert!(ir.manifest.fallbacks.contains_key(&hook_cap));
     }
 
     #[test]

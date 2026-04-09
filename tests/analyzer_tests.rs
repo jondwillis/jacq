@@ -282,7 +282,7 @@ mod fallbacks {
     fn declared_fallback_downgrades_error_to_info() {
         let mut manifest = minimal_manifest("test", vec![Target::Cursor]);
         manifest.fallbacks.insert(
-            "hooks.pre-tool-use".to_string(),
+            Capability::try_from("hooks.pre-tool-use".to_string()).unwrap(),
             BTreeMap::from([(Target::Cursor, FallbackStrategy::Skip)]),
         );
 
@@ -308,7 +308,7 @@ mod fallbacks {
     fn fallback_skip_noted_in_diagnostic() {
         let mut manifest = minimal_manifest("test", vec![Target::Cursor]);
         manifest.fallbacks.insert(
-            "hooks.pre-tool-use".to_string(),
+            Capability::try_from("hooks.pre-tool-use".to_string()).unwrap(),
             BTreeMap::from([(Target::Cursor, FallbackStrategy::Skip)]),
         );
 
@@ -324,7 +324,7 @@ mod fallbacks {
     fn fallback_instruction_based_noted() {
         let mut manifest = minimal_manifest("test", vec![Target::OpenCode]);
         manifest.fallbacks.insert(
-            "hooks.pre-tool-use".to_string(),
+            Capability::try_from("hooks.pre-tool-use".to_string()).unwrap(),
             BTreeMap::from([(Target::OpenCode, FallbackStrategy::InstructionBased)]),
         );
 
@@ -346,7 +346,7 @@ mod fallbacks {
         );
         // Fallback only for Cursor, not OpenClaw
         manifest.fallbacks.insert(
-            "hooks.pre-tool-use".to_string(),
+            Capability::try_from("hooks.pre-tool-use".to_string()).unwrap(),
             BTreeMap::from([(Target::Cursor, FallbackStrategy::Skip)]),
         );
 
@@ -388,10 +388,10 @@ mod report {
         let report = analyze(&ir);
 
         let cc = &report.target_summaries[&Target::ClaudeCode];
-        assert!(cc.compatible, "Claude Code should be fully compatible");
+        assert!(cc.compatible(), "Claude Code should be fully compatible");
 
         let cursor = &report.target_summaries[&Target::Cursor];
-        assert!(!cursor.compatible, "Cursor should not be fully compatible");
+        assert!(!cursor.compatible(), "Cursor should not be fully compatible");
     }
 
     #[test]
@@ -432,7 +432,7 @@ mod integration {
 
         // Claude Code should be clean
         let cc = &report.target_summaries[&Target::ClaudeCode];
-        assert!(cc.compatible);
+        assert!(cc.compatible());
 
         // OpenCode has partial support for some features but the plugin
         // declares a fallback for hooks.pre-tool-use → instruction-based
