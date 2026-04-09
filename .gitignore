@@ -1,3 +1,4 @@
 /target
 /examples/acme-connect/
 /examples/*/dist/
+.DS_Store
