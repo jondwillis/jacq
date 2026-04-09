@@ -1,0 +1,7 @@
+{
+  "name": "jacq-dev",
+  "description": "Development tools for the jacq plugin compiler — spec conformance checking, roundtrip validation, and IR gap analysis",
+  "author": {
+    "name": "jacq contributors"
+  }
+}
