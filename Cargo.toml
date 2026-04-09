@@ -1,0 +1,20 @@
+[package]
+name = "jacq"
+version = "0.1.0"
+edition = "2024"
+description = "Agnostic plugin compiler for AI coding agents"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
+walkdir = "2"
+comrak = "0.34"
+tera = "1"
+
+[dev-dependencies]
+insta = { version = "1", features = ["yaml"] }
