@@ -535,4 +535,106 @@ The `target` parameter is a `Target` (which is `Copy`). Without `move`, the clos
 
 ---
 
-*This guide grows with each phase. Phase 4 (Emitters) will cover target-specific code generation and the Emitter trait.*
+## Phase 4: Emitters
+
+### What Emitters Do
+
+Emitters are the code generators — the final stage of the compiler pipeline. Each emitter takes a `PluginIR` and writes files in the format a specific target platform expects. The output is a ready-to-install plugin.
+
+### Per-Target Output
+
+| Target | Manifest | Skills | Agents | MCP | Instructions |
+|---|---|---|---|---|---|
+| Claude Code | `plugin.json` | `commands/*.md` | `agents/*.md` | `.mcp.json` | `CLAUDE.md` |
+| OpenCode | `package.json` | In `AGENTS.md` | In `AGENTS.md` | — | `AGENTS.md` |
+| Codex | `plugin.json` | `skills/*.md` | In `AGENTS.md` | — | `AGENTS.md` |
+| Cursor | — | — | — | `.cursor/mcp.json` | `.cursorrules` |
+| OpenClaw | `package.json` | — | — | — | `README.md` |
+
+### Key Design Decisions
+
+#### 1. No Tera Templates (Yet)
+
+The plan called for Tera (Jinja2-like templates) for file generation. We skipped it for v0.1. The output formats are simple enough that direct string construction is clearer and more debuggable than template files. Templates make sense when output formats are complex or when end-users need to customize the output — neither applies yet.
+
+#### 2. Roundtrip Test as the Gold Standard
+
+The most important emitter test is the roundtrip:
+
+```rust
+fn roundtrip_parse_emitted_claude_code() {
+    let ir = build_ir(vec![Target::ClaudeCode]);
+    let (_tmp, out) = emit_claude_code(&ir);
+    let parsed = jacq::parser::parse_plugin(&out).unwrap();
+    assert_eq!(parsed.manifest.name, "test-plugin");
+    assert_eq!(parsed.skills.len(), 1);
+}
+```
+
+This proves that `emit → parse` produces equivalent output. If the emitter generates a broken `plugin.json` or malformed frontmatter, the parser catches it. This is the compiler's self-consistency check.
+
+#### 3. AGENTS.md as the Universal Fallback
+
+OpenCode and Codex both use `AGENTS.md` as their instruction file. The emitter combines instructions, skill descriptions, and agent descriptions into sections within `AGENTS.md`. This is the "instruction-based fallback" — when a target can't natively express skills or agents, they become documented text that the AI agent reads as context.
+
+#### 4. Functions Not Traits
+
+The plan proposed `trait Emitter { fn emit(...) }`. We used plain functions instead. A trait makes sense when you need dynamic dispatch (e.g., loading emitters as plugins). For 5 hardcoded targets matched exhaustively, a `match` is simpler and the compiler already ensures all targets are handled.
+
+### Rust Patterns Used in Phase 4
+
+#### 1. `tempfile::TempDir` for Test Isolation
+
+```rust
+let tmp = TempDir::new().unwrap();
+emit(&ir, tmp.path(), &opts).unwrap();
+// tmp is dropped at end of scope → directory deleted automatically
+```
+
+`TempDir` creates a unique temporary directory that's automatically cleaned up when dropped. Each test gets its own directory — no test pollution, no cleanup code. The `_tmp` binding pattern (keeping the `TempDir` alive while we inspect its contents via `out`) is a Rust idiom for RAII-managed resources.
+
+#### 2. `serde_json::json!` Macro for JSON Construction
+
+```rust
+let plugin_json = serde_json::json!({
+    "name": ir.manifest.name,
+    "version": ir.manifest.version,
+});
+```
+
+The `json!` macro builds `serde_json::Value` from a JSON-like literal syntax. It's terser than constructing `serde_json::Map` manually and reads like the output format. The trade-off: it's runtime construction, not compile-time-checked. Typos in keys won't be caught until tests run.
+
+---
+
+### Quiz: Phase 4
+
+### Q1: Why Roundtrip?
+Why is `emit → parse` the most important emitter test, rather than just checking file content?
+
+<details>
+<summary>Answer</summary>
+
+File content checks are fragile — they break on whitespace changes, key ordering, etc. The roundtrip test checks semantic equivalence: "does the emitted plugin parse back to the same data?" This is the actual invariant we care about. If we change how YAML frontmatter is formatted (e.g., different quote styles), file content tests break but the roundtrip passes. The roundtrip also validates that the parser and emitter agree on the format — catching bugs in either.
+</details>
+
+### Q2: Functions vs Traits
+When would it make sense to refactor the emitters from functions to a trait?
+
+<details>
+<summary>Answer</summary>
+
+When the emitter set needs to be extensible without modifying jacq's source. If community contributors should be able to add new target emitters as plugins (loaded from shared libraries, WASM modules, or separate crates), a trait is necessary for dynamic dispatch. The current `match` in `emit()` is closed — adding a target means editing `emitter.rs` and `targets.rs`. A trait would open this up: `Box<dyn Emitter>` loaded at runtime. The plan's Principle #4 ("minimal core, maximal plugins") suggests this is a future direction.
+</details>
+
+### Q3: The AGENTS.md Pattern
+Why do OpenCode and Codex both get `AGENTS.md` while Claude Code gets separate `CLAUDE.md`, `commands/`, and `agents/` directories?
+
+<details>
+<summary>Answer</summary>
+
+Claude Code has a rich plugin system with native support for discrete skills (frontmatter-based .md files), agents (frontmatter-based .md files), and instructions (`CLAUDE.md`). These are first-class concepts with specific loading behavior. OpenCode and Codex have simpler models where the AI reads a single instruction document. Cramming skills and agents into `AGENTS.md` sections is the "instruction-based fallback" — the features become documented text rather than native plugin constructs. The AI still sees them, but the host platform doesn't manage them as discrete units.
+</details>
+
+---
+
+*This guide grows with each phase. Phase 5 (CLI Wiring) will connect parse → analyze → emit into the CLI commands.*

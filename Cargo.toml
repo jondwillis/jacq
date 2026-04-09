@@ -18,3 +18,4 @@ tera = "1"
 
 [dev-dependencies]
 insta = { version = "1", features = ["yaml"] }
+tempfile = "3"
