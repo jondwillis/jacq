@@ -1,0 +1,14 @@
+name: security-guidance
+version: 0.0.0
+description: Security reminder hook that warns about potential security issues when editing files, including command injection, XSS, and unsafe code patterns
+author:
+  name: Anthropic
+  email: support@anthropic.com
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

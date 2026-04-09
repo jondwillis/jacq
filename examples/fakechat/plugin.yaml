@@ -1,0 +1,18 @@
+name: fakechat
+version: 0.0.1
+description: Localhost iMessage-style web chat for Claude Code — test surface with file upload and edits. No tokens, no access control.
+author: ''
+license: null
+keywords:
+- fakechat
+- web
+- localhost
+- testing
+- channel
+- mcp
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

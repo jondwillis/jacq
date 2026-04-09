@@ -1,0 +1,14 @@
+name: code-review
+version: 0.0.0
+description: Automated code review for pull requests using multiple specialized agents with confidence-based scoring
+author:
+  name: Anthropic
+  email: support@anthropic.com
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

@@ -1,0 +1,13 @@
+name: linear
+version: 0.0.0
+description: Linear issue tracking integration. Create issues, manage projects, update statuses, search across workspaces, and streamline your software development workflow with Linear's modern issue tracker.
+author:
+  name: Linear
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

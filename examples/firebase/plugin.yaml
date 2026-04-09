@@ -1,0 +1,13 @@
+name: firebase
+version: 0.0.0
+description: Google Firebase MCP integration. Manage Firestore databases, authentication, cloud functions, hosting, and storage. Build and manage your Firebase backend directly from your development workflow.
+author:
+  name: Google
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

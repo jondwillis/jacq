@@ -1,0 +1,14 @@
+name: frontend-design
+version: 0.0.0
+description: Frontend design skill for UI/UX implementation
+author:
+  name: Anthropic
+  email: support@anthropic.com
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

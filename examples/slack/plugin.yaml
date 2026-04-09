@@ -1,0 +1,13 @@
+name: slack
+version: 0.0.0
+description: Slack workspace integration. Search messages, access channels, read threads, and stay connected with your team's communications while coding. Find relevant discussions and context quickly.
+author:
+  name: Slack
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

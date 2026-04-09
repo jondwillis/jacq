@@ -1,0 +1,13 @@
+name: asana
+version: 0.0.0
+description: Asana project management integration. Create and manage tasks, search projects, update assignments, track progress, and integrate your development workflow with Asana's work management platform.
+author:
+  name: Asana
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

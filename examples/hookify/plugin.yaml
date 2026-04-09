@@ -1,0 +1,14 @@
+name: hookify
+version: 0.0.0
+description: Easily create hooks to prevent unwanted behaviors by analyzing conversation patterns
+author:
+  name: Anthropic
+  email: support@anthropic.com
+license: null
+keywords: []
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}
