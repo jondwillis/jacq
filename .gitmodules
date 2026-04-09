@@ -1,3 +1,12 @@
 [submodule "vendor/claude-plugins-official"]
 	path = vendor/claude-plugins-official
 	url = https://github.com/anthropics/claude-plugins-official.git
+[submodule "research/codex"]
+	path = research/codex
+	url = https://github.com/openai/codex.git
+[submodule "research/openclaw"]
+	path = research/openclaw
+	url = https://github.com/openclaw/openclaw.git
+[submodule "research/opencode"]
+	path = research/opencode
+	url = https://github.com/opencode-ai/opencode.git
