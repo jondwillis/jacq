@@ -1,5 +1,7 @@
 //! Error types for jacq, using miette for rich diagnostics.
 
+use std::path::PathBuf;
+
 use miette::Diagnostic;
 use thiserror::Error;
 
@@ -7,12 +9,12 @@ use crate::targets::Target;
 
 #[derive(Debug, Error, Diagnostic)]
 pub enum JacqError {
-    #[error("No plugin manifest found in {path}")]
+    #[error("No plugin manifest found in {}", path.display())]
     #[diagnostic(
         code(jacq::no_manifest),
         help("Expected plugin.yaml (IR) or plugin.json (Claude Code) in the plugin directory")
     )]
-    NoManifest { path: String },
+    NoManifest { path: PathBuf },
 
     #[error("Failed to parse manifest: {reason}")]
     #[diagnostic(code(jacq::parse_error))]
@@ -31,6 +33,7 @@ pub enum JacqError {
     #[error("Capability '{capability}' is only partially supported by target '{target}'")]
     #[diagnostic(
         code(jacq::partial_capability),
+        severity(warning),
         help("The emitted output may behave differently than on Claude Code")
     )]
     PartialCapability {
@@ -38,13 +41,13 @@ pub enum JacqError {
         target: Target,
     },
 
-    #[error("Invalid frontmatter in {path}: {reason}")]
+    #[error("Invalid frontmatter in {}: {reason}", path.display())]
     #[diagnostic(code(jacq::invalid_frontmatter))]
-    InvalidFrontmatter { path: String, reason: String },
+    InvalidFrontmatter { path: PathBuf, reason: String },
 
-    #[error("Referenced file not found: {path}")]
+    #[error("Referenced file not found: {}", path.display())]
     #[diagnostic(code(jacq::missing_file))]
-    MissingFile { path: String },
+    MissingFile { path: PathBuf },
 
     #[error(transparent)]
     #[diagnostic(code(jacq::io))]

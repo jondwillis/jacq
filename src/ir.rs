@@ -63,7 +63,9 @@ pub struct PluginManifest {
     /// Short description
     pub description: String,
 
-    /// Author — either a string or structured { name, email }
+    /// Author — either a string or structured { name, email }.
+    /// NOTE: Variant order matters for serde untagged — Name(String) must come
+    /// first so that a plain string matches before Structured is attempted.
     #[serde(default)]
     pub author: Author,
 
@@ -97,6 +99,10 @@ pub struct PluginManifest {
 // Author
 // ---------------------------------------------------------------------------
 
+/// Plugin author — accepts both `"name"` and `{ name, email }` forms.
+///
+/// Variant order matters: serde untagged tries variants in declaration order.
+/// `Name(String)` must be first so plain strings don't fail on `Structured`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Author {
@@ -133,28 +139,38 @@ pub struct Requirements {
 ///
 /// Capabilities use a dotted path notation: "hooks.pre-tool-use", "agents.subagent".
 /// The top-level name identifies the category; sub-paths identify specific features.
+///
+/// Unknown categories produce a deserialization error rather than silently
+/// falling back — a compiler must not silently rewrite input.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(from = "String", into = "String")]
+#[serde(try_from = "String", into = "String")]
 pub struct Capability {
     pub category: CapabilityCategory,
     pub feature: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CapabilityCategory {
-    Skills,
     Agents,
-    Hooks,
-    McpServers,
-    Instructions,
     Commands,
+    Hooks,
+    Instructions,
+    McpServers,
+    Skills,
 }
 
-impl From<String> for Capability {
-    fn from(s: String) -> Self {
+impl TryFrom<String> for Capability {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
         let (cat_str, feature) = match s.split_once('.') {
-            Some((cat, feat)) => (cat, Some(feat.to_string())),
+            Some((cat, feat)) => {
+                if feat.is_empty() {
+                    return Err(format!("capability '{s}' has empty feature after '.'"));
+                }
+                (cat, Some(feat.to_string()))
+            }
             None => (s.as_str(), None),
         };
         let category = match cat_str {
@@ -164,13 +180,14 @@ impl From<String> for Capability {
             "mcp-servers" => CapabilityCategory::McpServers,
             "instructions" => CapabilityCategory::Instructions,
             "commands" => CapabilityCategory::Commands,
-            other => {
-                // For forward compat, treat unknown as commands with feature
-                eprintln!("warning: unknown capability category '{other}', treating as commands");
-                CapabilityCategory::Commands
+            _ => {
+                return Err(format!(
+                    "unknown capability category '{cat_str}'. \
+                     Valid categories: skills, agents, hooks, mcp-servers, instructions, commands"
+                ))
             }
         };
-        Capability { category, feature }
+        Ok(Capability { category, feature })
     }
 }
 
@@ -188,6 +205,21 @@ impl From<Capability> for String {
             Some(f) => format!("{cat}.{f}"),
             None => cat.to_string(),
         }
+    }
+}
+
+// Ord for Capability — enables use as BTreeMap key.
+impl PartialOrd for Capability {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Capability {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.category
+            .cmp(&other.category)
+            .then_with(|| self.feature.cmp(&other.feature))
     }
 }
 
@@ -211,7 +243,10 @@ pub enum Permission {
 // ---------------------------------------------------------------------------
 
 /// What to do when a target doesn't support a required capability.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// This is a closed enum — typos in strategy names produce deserialization errors
+/// instead of being silently accepted as custom values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FallbackStrategy {
     /// Emit as an instruction/rule instead of native feature
@@ -222,9 +257,6 @@ pub enum FallbackStrategy {
     AgentsMdSection,
     /// Warn and omit the feature entirely
     Skip,
-    /// Custom fallback (target-specific emitter handles it)
-    #[serde(untagged)]
-    Custom(String),
 }
 
 // ---------------------------------------------------------------------------

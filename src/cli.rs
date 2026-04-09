@@ -96,22 +96,3 @@ pub enum Command {
         output: Option<PathBuf>,
     },
 }
-
-// clap needs FromStr for Target in --target flags
-impl std::str::FromStr for Target {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s {
-            "claude-code" => Ok(Target::ClaudeCode),
-            "opencode" => Ok(Target::OpenCode),
-            "codex" => Ok(Target::Codex),
-            "cursor" => Ok(Target::Cursor),
-            "antigravity" => Ok(Target::Antigravity),
-            "openclaw" => Ok(Target::OpenClaw),
-            _ => Err(format!(
-                "unknown target '{s}'. Valid targets: claude-code, opencode, codex, cursor, antigravity, openclaw"
-            )),
-        }
-    }
-}
