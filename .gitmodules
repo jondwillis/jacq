@@ -10,12 +10,3 @@
 [submodule "research/opencode"]
 	path = vendor/opencode
 	url = https://github.com/opencode-ai/opencode.git
-[submodule "vendor/opencode-claude-auth"]
-	path = vendor/opencode-claude-auth
-	url = https://github.com/griffinmartin/opencode-claude-auth.git
-[submodule "vendor/awesome-cursor-rules"]
-	path = vendor/awesome-cursor-rules
-	url = https://github.com/sanjeed5/awesome-cursor-rules-mdc.git
-[submodule "vendor/odin-codex-plugin"]
-	path = vendor/odin-codex-plugin
-	url = https://github.com/OutlineDriven/odin-codex-plugin.git
