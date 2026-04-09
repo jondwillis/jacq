@@ -10,3 +10,6 @@
 [submodule "research/opencode"]
 	path = vendor/opencode
 	url = https://github.com/opencode-ai/opencode.git
+[submodule "vendor/cursor-marketplace-template"]
+	path = vendor/cursor-marketplace-template
+	url = https://github.com/fieldsphere/cursor-team-marketplace-template.git
