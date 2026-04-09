@@ -1,0 +1,5 @@
+name: lint-check
+source_path: hooks/lint.yaml
+event: pre-tool-use
+command: "eslint --check"
+timeout: 5000

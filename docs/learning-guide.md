@@ -236,4 +236,171 @@ The trade-off is that updating a matrix requires a jacq release. This is accepta
 
 ---
 
-*This guide grows with each phase. Phase 2 (Parser) will cover YAML frontmatter extraction, directory walking, and error reporting with miette.*
+## Phase 2: Parser
+
+### What the Parser Does
+
+The parser's job is to read a plugin directory from disk and produce a `PluginIR` — the in-memory AST that downstream phases (analyzer, emitters) consume. It handles two input formats:
+
+1. **Claude Code native**: `.claude-plugin/plugin.json` + `commands/*.md`
+2. **IR format**: `plugin.yaml` + `skills/*.md` + `agents/*.md` + `hooks/*.yaml` + `mcp/*.yaml` + `instructions/*.md` + `targets/*/`
+
+The parser auto-detects which format by checking which manifest file exists (IR format takes priority).
+
+### Key Design Decisions
+
+#### 1. No Comrak for Frontmatter
+
+The plan originally called for comrak (a CommonMark parser) to handle frontmatter. We dropped it. YAML frontmatter is a simple format:
+
+```
+---
+key: value
+---
+markdown body
+```
+
+A 15-line `split_frontmatter()` function handles this reliably. Comrak would add complexity for no benefit — it parses markdown ASTs, but we don't need to understand the markdown structure, only split it from the YAML header.
+
+**Lesson**: Don't reach for a library when the problem is simpler than the library's domain. Frontmatter extraction is string splitting, not markdown parsing.
+
+#### 2. Convention Over Configuration
+
+The parser discovers capabilities from directory structure, not from manifest declarations:
+
+- `skills/*.md` → skills
+- `commands/*.md` → skills (Claude Code calls them "commands")
+- `agents/*.md` → agents
+- `hooks/*.yaml` → hooks
+- `mcp/*.yaml` → MCP servers
+- `instructions/*.md` → instructions
+- `targets/<name>/*` → per-target overrides
+
+This is the Next.js pattern: the filesystem IS the configuration. The manifest declares metadata and cross-platform concerns (targets, capabilities, fallbacks), but the plugin's actual content is discovered by walking directories.
+
+#### 3. Sorted Output for Determinism
+
+Every parser function sorts its output by name before returning. This means the same plugin directory always produces the same `PluginIR` regardless of filesystem enumeration order. This matters for:
+- Snapshot tests (insta) — same input = same output
+- Diffing build output — deterministic generation
+- Cross-platform consistency — macOS and Linux may enumerate differently
+
+#### 4. Test Fixtures as Specification
+
+The `tests/fixtures/` directory contains synthetic plugins that serve as both test data and format specification:
+
+- `claude-code-plugin/` — minimal Claude Code native format
+- `ir-plugin/` — full IR format with all feature types
+- `bad-frontmatter/` — malformed YAML in a skill file
+- `empty-dir/` — no manifest at all
+
+Plus we test against the real `notes-app-plugin` in `/Volumes/Sidecar/` — this is the dogfooding test that proves jacq can parse a real-world Claude Code plugin.
+
+### Rust Patterns Used in Phase 2
+
+#### 1. `walkdir` for Recursive Directory Traversal
+
+```rust
+for entry in WalkDir::new(&search_dir)
+    .min_depth(1)
+    .max_depth(2)
+    .into_iter()
+    .filter_map(|e| e.ok())
+    .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+{
+```
+
+`walkdir` is the standard Rust crate for filesystem traversal. Key details:
+- `min_depth(1)` skips the directory itself
+- `max_depth(2)` prevents unbounded recursion
+- `filter_map(|e| e.ok())` silently skips entries we can't read (permission errors)
+- `is_some_and()` (stable since Rust 1.70) is cleaner than `map_or(false, |ext| ...)`
+
+#### 2. `Path::strip_prefix` for Relative Paths
+
+```rust
+let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
+```
+
+Plugin content stores relative paths (e.g., `commands/greet.md`) rather than absolute paths. This keeps the IR portable — it doesn't encode the machine-specific location where the plugin was loaded from.
+
+#### 3. `env!("CARGO_MANIFEST_DIR")` for Test Fixtures
+
+```rust
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
+}
+```
+
+`CARGO_MANIFEST_DIR` is set by Cargo at compile time to the directory containing `Cargo.toml`. This means tests find fixtures regardless of the working directory — `cargo test` works from any location.
+
+#### 4. Graceful Skipping for Environment-Dependent Tests
+
+```rust
+#[test]
+fn parse_notes_app_plugin() {
+    let path = Path::new("/Volumes/Sidecar/notes-app-plugin");
+    if !path.exists() {
+        return; // Skip if not available (CI, other machines)
+    }
+    // ...
+}
+```
+
+The real-plugin test gracefully skips when the fixture isn't available. This is better than `#[ignore]` because it runs automatically when the fixture exists but doesn't fail in CI.
+
+---
+
+### Quiz: Phase 2
+
+### Q1: Format Detection Priority
+Why does the parser check for `plugin.yaml` before `.claude-plugin/plugin.json`?
+
+<details>
+<summary>Answer</summary>
+
+Because the IR format is a superset. If a plugin has both files (e.g., during migration from Claude Code to IR format), the IR manifest contains more information (targets, capabilities, fallbacks). Prioritizing `plugin.yaml` ensures the richer format is used. This also means a developer can add a `plugin.yaml` to an existing Claude Code plugin without deleting the original `plugin.json`.
+</details>
+
+### Q2: Commands vs Skills
+Both `commands/*.md` and `skills/*.md` are parsed into `Vec<SkillDef>`. Why not keep them separate?
+
+<details>
+<summary>Answer</summary>
+
+They're the same concept with different names. Claude Code calls them "commands" (slash commands the user invokes). The IR uses "skills" as the generic term. Merging them into one `Vec<SkillDef>` means the analyzer and emitters don't need to handle two identical types. The `source_path` preserves which directory they came from if an emitter needs to know.
+</details>
+
+### Q3: Why Sort?
+Every parser function sorts output by name. What breaks if you remove the sorting?
+
+<details>
+<summary>Answer</summary>
+
+Determinism. `walkdir` enumerates files in filesystem order, which varies by OS and filesystem. On macOS (APFS), it's roughly creation-time order. On Linux (ext4), it's inode order. Without sorting, the same plugin directory could produce different `PluginIR` values on different machines, causing snapshot test failures and non-reproducible builds.
+</details>
+
+### Q4: Error Handling
+The parser uses `filter_map(|e| e.ok())` when walking directories, silently skipping unreadable entries. Is this a good pattern for a compiler?
+
+<details>
+<summary>Answer</summary>
+
+It's debatable. Silently skipping unreadable files means a permission-denied error on a skill file won't be reported — the skill just won't appear in the IR. For a compiler that promises correctness, this is arguably wrong. A stricter approach would collect errors and report them. However, for Phase 2 this is acceptable because: (1) the common case is all files are readable, (2) missing skills will surface later when capability analysis doesn't find expected features, and (3) adding strict error collection is a refinement that can come later without changing the architecture.
+</details>
+
+### Q5: The `split_frontmatter` Function
+What happens if a markdown file contains `---` in its body (e.g., as a horizontal rule)?
+
+<details>
+<summary>Answer</summary>
+
+The function finds the *first* `\n---` after the opening delimiter, so a `---` horizontal rule later in the body won't interfere — it's already past the closing delimiter. The only edge case is if the YAML frontmatter itself contains `\n---` on a line, which would prematurely close the frontmatter. This is extremely rare in practice (YAML doesn't use `---` as content), and the same limitation exists in every frontmatter parser (Hugo, Jekyll, etc.).
+</details>
+
+---
+
+*This guide grows with each phase. Phase 3 (Analyzer) will cover capability comparison, compatibility reporting, and fallback resolution.*

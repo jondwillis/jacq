@@ -1,0 +1,21 @@
+ir_version: "0.1"
+targets: [claude-code, opencode]
+name: ir-test-plugin
+version: "2.0.0"
+description: "A test IR plugin with all features"
+author: "Test Author"
+license: "MIT"
+keywords: [test, ir]
+
+requires:
+  capabilities:
+    - skills
+    - hooks.pre-tool-use
+    - mcp-servers
+  permissions:
+    - file-read
+    - network
+
+fallbacks:
+  hooks.pre-tool-use:
+    opencode: instruction-based

@@ -1,0 +1,10 @@
+{
+  "name": "test-plugin",
+  "version": "1.0.0",
+  "description": "A test Claude Code plugin",
+  "author": {
+    "name": "Test Author"
+  },
+  "license": "MIT",
+  "keywords": ["test"]
+}

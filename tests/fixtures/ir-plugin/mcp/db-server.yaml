@@ -1,0 +1,8 @@
+name: db-server
+source_path: mcp/db-server.yaml
+command: npx
+args:
+  - "-y"
+  - "@test/db-mcp"
+env:
+  DB_URL: "postgres://localhost/test"

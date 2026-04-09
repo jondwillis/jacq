@@ -1,0 +1,5 @@
+{
+  "name": "bad-plugin",
+  "version": "1.0.0",
+  "description": "Plugin with bad frontmatter in a command"
+}
