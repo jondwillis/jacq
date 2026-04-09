@@ -32,22 +32,26 @@ echo
 # 3. Roundtrip results
 echo "▶ Roundtrip plugin conformance..."
 ROUNDTRIP=$(cargo test roundtrip_all -- --nocapture 2>&1)
-OFFICIAL_PASS=$(echo "$ROUNDTRIP" | grep "Official plugins:" | grep -o '[0-9]* passed' | head -1)
-EXTERNAL_PASS=$(echo "$ROUNDTRIP" | grep "External plugins:" | grep -o '[0-9]* passed' | head -1)
-PARSE_FAIL=$(echo "$ROUNDTRIP" | grep "⚠️" | wc -l | tr -d ' ')
-ROUNDTRIP_FAIL=$(echo "$ROUNDTRIP" | grep "❌" | wc -l | tr -d ' ')
+OFFICIAL_PASS=$(echo "$ROUNDTRIP" | grep "Official plugins:" | grep -o '[0-9]* passed' | head -1 || echo "?")
+EXTERNAL_PASS=$(echo "$ROUNDTRIP" | grep "External plugins:" | grep -o '[0-9]* passed' | head -1 || echo "?")
+PARSE_FAIL=$(echo "$ROUNDTRIP" | grep -c "known limitation" || true)
+ROUNDTRIP_FAIL=$(echo "$ROUNDTRIP" | { grep -c "^  ❌" || true; })
 echo "  Official: $OFFICIAL_PASS"
 echo "  External: $EXTERNAL_PASS"
-[ "$PARSE_FAIL" -gt 0 ] && echo "  ⚠️  $PARSE_FAIL parse failures:"
-echo "$ROUNDTRIP" | grep "⚠️" | sed 's/^/    /'
-[ "$ROUNDTRIP_FAIL" -gt 0 ] && echo "  ❌ $ROUNDTRIP_FAIL roundtrip failures:"
-echo "$ROUNDTRIP" | grep "❌" | sed 's/^/    /'
-echo "  ✅ Roundtrip OK"
+[ "$PARSE_FAIL" -gt 0 ] && { echo "  ⚠️  $PARSE_FAIL parse failures:"; echo "$ROUNDTRIP" | grep "⚠️" | sed 's/^/    /'; }
+[ "$ROUNDTRIP_FAIL" -gt 0 ] && { echo "  ❌ $ROUNDTRIP_FAIL roundtrip failures:"; echo "$ROUNDTRIP" | grep "❌" | sed 's/^/    /'; }
+# Check if roundtrip tests actually passed
+if echo "$ROUNDTRIP" | grep -q "test result: ok"; then
+    echo "  ✅ Roundtrip OK"
+else
+    echo "  ❌ Roundtrip tests failed"
+    exit 1
+fi
 echo
 
 # 4. Check for #[serde(flatten)] — should not exist on frontmatter/def types
 echo "▶ Checking for serde(flatten) catch-alls..."
-FLATTEN_COUNT=$(grep -r 'serde(flatten)' src/ir.rs 2>/dev/null | wc -l | tr -d ' ')
+FLATTEN_COUNT=$(grep -c 'serde(flatten)' src/ir.rs 2>/dev/null || true)
 if [ "$FLATTEN_COUNT" -gt 0 ]; then
     echo "  ❌ Found $FLATTEN_COUNT serde(flatten) in ir.rs — unknown fields silently accepted"
     grep -n 'serde(flatten)' src/ir.rs
