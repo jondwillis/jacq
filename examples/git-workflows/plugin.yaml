@@ -1,0 +1,22 @@
+name: git-workflows
+version: 0.1.0
+description: Common git workflow skills for commits, PRs, CI, and merge conflict handling.
+author:
+  name: Cursor Team
+  email: hi@cursor.com
+license: MIT
+keywords:
+- cursor
+- plugin
+- git
+- github
+- ci
+- pr
+displayName: Git Workflows
+logo: assets/git-workflows.png
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

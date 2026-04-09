@@ -1,0 +1,21 @@
+name: design
+version: 0.1.0
+description: Design workflows for wireframes, component design, and production-ready mockups.
+author:
+  name: Cursor Team
+  email: hi@cursor.com
+license: MIT
+keywords:
+- cursor
+- plugin
+- design
+- wireframes
+- ui
+displayName: Design
+logo: assets/design.png
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}

@@ -1,0 +1,21 @@
+name: documentation
+version: 0.1.0
+description: Documentation-focused skills and agent for README, weekly reviews, and markdown conventions.
+author:
+  name: Cursor Team
+  email: hi@cursor.com
+license: MIT
+keywords:
+- cursor
+- plugin
+- docs
+- readme
+- markdown
+displayName: Documentation
+logo: assets/documentation.png
+ir_version: '0.1'
+targets:
+- claude-code
+requires: null
+fallbacks: {}
+vars: {}
