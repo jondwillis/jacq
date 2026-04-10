@@ -1,20 +1,57 @@
-[package]
-name = "jacq"
+[workspace]
+resolver = "2"
+members = [
+    "crates/jacq-core",
+    "crates/jacq-cli",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "Agnostic plugin compiler for AI coding agents"
+rust-version = "1.85"
 license = "MIT"
+repository = "https://github.com/jacq-dev/jacq"
+homepage = "https://github.com/jacq-dev/jacq"
+authors = ["jacq contributors"]
 
-[dependencies]
-clap = { version = "4", features = ["derive"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# Shared dependency versions — keep in sync across workspace members.
+# Pinning to specific versions is a supply-chain defense: it means
+# `cargo update` is an explicit, auditable action, not an implicit one.
+[workspace.dependencies]
+# Error handling
+miette = { version = "7.2", features = ["fancy"] }
+thiserror = "2.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 serde_yaml = "0.9"
-miette = { version = "7", features = ["fancy"] }
-thiserror = "2"
-walkdir = "2"
-tera = "1"
 
-[dev-dependencies]
-insta = { version = "1", features = ["yaml"] }
-tempfile = "3"
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Filesystem
+walkdir = "2.5"
+
+# Templating
+tera = "1.20"
+
+# Internal crates
+jacq-core = { path = "crates/jacq-core", version = "0.1.0" }
+
+# Dev dependencies
+[workspace.dependencies.insta]
+version = "1.41"
+features = ["yaml"]
+
+[workspace.dependencies.tempfile]
+version = "3.14"
+
+# ---------------------------------------------------------------------------
+# Release profile — small binaries, maximum optimization
+# ---------------------------------------------------------------------------
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

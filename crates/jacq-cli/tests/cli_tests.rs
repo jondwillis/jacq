@@ -10,7 +10,11 @@ fn jacq() -> Command {
 }
 
 fn fixture(name: &str) -> PathBuf {
+    // Fixtures live in the sibling jacq-core crate — we share them across
+    // the workspace rather than duplicating.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("jacq-core")
         .join("tests")
         .join("fixtures")
         .join(name)

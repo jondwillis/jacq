@@ -1,0 +1,30 @@
+[package]
+name = "jacq-core"
+description = "Core compiler library for jacq — parse, analyze, and emit plugins for AI coding agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords = ["compiler", "plugin", "ai", "claude-code", "ir"]
+categories = ["compilers", "development-tools"]
+readme = "../../README.md"
+
+[lib]
+name = "jacq_core"
+path = "src/lib.rs"
+
+[dependencies]
+miette.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+walkdir.workspace = true
+tera.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile.workspace = true

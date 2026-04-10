@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
-use crate::targets::Target;
+use jacq_core::targets::Target;
 
 #[derive(Debug, Parser)]
 #[command(

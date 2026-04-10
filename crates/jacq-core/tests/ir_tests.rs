@@ -19,8 +19,8 @@ fn from_json<T: serde::de::DeserializeOwned>(s: &str) -> T {
 
 mod manifest {
     use super::*;
-    use jacq::ir::*;
-    use jacq::targets::Target;
+    use jacq_core::ir::*;
+    use jacq_core::targets::Target;
 
     #[test]
     fn parse_minimal_claude_code_plugin_json() {
@@ -170,7 +170,7 @@ author: "Jon Willis"
 // ===========================================================================
 
 mod capability {
-    use jacq::ir::*;
+    use jacq_core::ir::*;
 
     #[test]
     fn parse_simple_capability() {
@@ -311,7 +311,7 @@ permissions: []
 // ===========================================================================
 
 mod fallback {
-    use jacq::ir::FallbackStrategy;
+    use jacq_core::ir::FallbackStrategy;
 
     #[test]
     fn known_strategies_parse() {
@@ -353,7 +353,7 @@ mod fallback {
 // ===========================================================================
 
 mod target {
-    use jacq::targets::Target;
+    use jacq_core::targets::Target;
 
     #[test]
     fn from_str_all_targets() {
@@ -424,7 +424,7 @@ mod target {
 // ===========================================================================
 
 mod matrices {
-    use jacq::targets::*;
+    use jacq_core::targets::*;
 
     #[test]
     fn claude_code_supports_everything() {
@@ -517,7 +517,7 @@ mod matrices {
 // ===========================================================================
 
 mod string_or_vec {
-    use jacq::ir::StringOrVec;
+    use jacq_core::ir::StringOrVec;
 
     #[test]
     fn single_string() {
@@ -543,7 +543,7 @@ mod string_or_vec {
 // ===========================================================================
 
 mod skill_frontmatter {
-    use jacq::ir::SkillFrontmatter;
+    use jacq_core::ir::SkillFrontmatter;
 
     #[test]
     fn parse_typical_frontmatter() {
@@ -587,7 +587,7 @@ custom-field: "should fail"
 // ===========================================================================
 
 mod agent_frontmatter {
-    use jacq::ir::AgentFrontmatter;
+    use jacq_core::ir::AgentFrontmatter;
 
     #[test]
     fn parse_agent_frontmatter() {
@@ -623,7 +623,7 @@ custom-agent-field: true
 // ===========================================================================
 
 mod hook_def {
-    use jacq::ir::{HookDef, HookEvent};
+    use jacq_core::ir::{HookDef, HookEvent};
 
     #[test]
     fn parse_hook_def() {
@@ -682,7 +682,7 @@ command: "echo done"
 // ===========================================================================
 
 mod mcp_server_def {
-    use jacq::ir::McpServerDef;
+    use jacq_core::ir::McpServerDef;
 
     #[test]
     fn parse_mcp_server() {
@@ -723,7 +723,7 @@ command: my-server
 mod plugin_ir {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
-    use jacq::ir::*;
+    use jacq_core::ir::*;
 
     #[test]
     fn construct_minimal_plugin_ir() {
@@ -835,7 +835,7 @@ mod plugin_ir {
 // ===========================================================================
 
 mod permission {
-    use jacq::ir::Permission;
+    use jacq_core::ir::Permission;
 
     #[test]
     fn known_permissions() {

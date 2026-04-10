@@ -8,10 +8,10 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use jacq::emitter;
-use jacq::parser::parse_plugin;
-use jacq::targets::Target;
-use jacq::template;
+use jacq_core::emitter;
+use jacq_core::parser::parse_plugin;
+use jacq_core::targets::Target;
+use jacq_core::template;
 
 fn vendor_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -29,7 +29,7 @@ fn vendor_external_dir() -> PathBuf {
 
 /// Try to parse a plugin, returning None if it fails (some plugins have
 /// malformed frontmatter that we don't handle yet).
-fn try_parse(dir: &Path) -> Option<jacq::ir::PluginIR> {
+fn try_parse(dir: &Path) -> Option<jacq_core::ir::PluginIR> {
     match parse_plugin(dir) {
         Ok(ir) => Some(ir),
         Err(_) => None,

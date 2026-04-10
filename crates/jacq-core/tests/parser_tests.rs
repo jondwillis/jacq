@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
-use jacq::parser::parse_plugin;
-use jacq::targets::Target;
+use jacq_core::parser::parse_plugin;
+use jacq_core::targets::Target;
 
 fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -113,7 +113,7 @@ mod ir_format {
     #[test]
     fn parses_fallbacks() {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
-        let hook_cap = jacq::ir::Capability::try_from("hooks.pre-tool-use".to_string()).unwrap();
+        let hook_cap = jacq_core::ir::Capability::try_from("hooks.pre-tool-use".to_string()).unwrap();
         assert!(ir.manifest.fallbacks.contains_key(&hook_cap));
     }
 
@@ -210,7 +210,7 @@ mod errors {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, jacq::error::JacqError::NoManifest { .. }),
+            matches!(err, jacq_core::error::JacqError::NoManifest { .. }),
             "expected NoManifest, got {err:?}"
         );
     }
@@ -227,7 +227,7 @@ mod errors {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, jacq::error::JacqError::InvalidFrontmatter { .. }),
+            matches!(err, jacq_core::error::JacqError::InvalidFrontmatter { .. }),
             "expected InvalidFrontmatter, got {err:?}"
         );
     }

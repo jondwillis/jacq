@@ -6,9 +6,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use jacq::analyzer::{analyze, Severity};
-use jacq::ir::*;
-use jacq::targets::Target;
+use jacq_core::analyzer::{analyze, Severity};
+use jacq_core::ir::*;
+use jacq_core::targets::Target;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -437,7 +437,7 @@ mod report {
 
 mod integration {
     use super::*;
-    use jacq::parser::parse_plugin;
+    use jacq_core::parser::parse_plugin;
 
     fn fixture(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))

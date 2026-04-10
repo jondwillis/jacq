@@ -2,12 +2,13 @@ use std::process;
 
 use clap::Parser;
 
-use jacq::analyzer::{self, Severity};
-use jacq::cli;
-use jacq::emitter;
-use jacq::parser;
-use jacq::targets::Target;
-use jacq::template;
+use jacq_core::analyzer::{self, Severity};
+use jacq_core::emitter;
+use jacq_core::parser;
+use jacq_core::targets::Target;
+use jacq_core::template;
+
+mod cli;
 
 fn main() {
     let cli = cli::Cli::parse();
@@ -337,7 +338,7 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
     let report = analyzer::analyze(&ir);
     println!();
 
-    use jacq::targets::{capability_matrix, SupportLevel, CAPABILITY_KEYS};
+    use jacq_core::targets::{capability_matrix, SupportLevel, CAPABILITY_KEYS};
 
     println!("Capability Matrix:");
     print!("  {:24}", "");

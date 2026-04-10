@@ -6,9 +6,9 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use jacq::emitter::emit;
-use jacq::ir::*;
-use jacq::targets::Target;
+use jacq_core::emitter::emit;
+use jacq_core::ir::*;
+use jacq_core::targets::Target;
 use tempfile::TempDir;
 
 // ---------------------------------------------------------------------------
@@ -229,7 +229,7 @@ mod claude_code {
         let ir = build_ir(vec![Target::ClaudeCode]);
         let (_tmp, out) = emit_claude_code(&ir);
 
-        let parsed = jacq::parser::parse_plugin(&out).unwrap();
+        let parsed = jacq_core::parser::parse_plugin(&out).unwrap();
         assert_eq!(parsed.manifest.name, "test-plugin");
         assert_eq!(parsed.skills.len(), 1);
         assert_eq!(parsed.skills[0].name, "search");
@@ -336,8 +336,8 @@ mod codex {
 
 mod integration {
     use super::*;
-    use jacq::analyzer::analyze;
-    use jacq::parser::parse_plugin;
+    use jacq_core::analyzer::analyze;
+    use jacq_core::parser::parse_plugin;
 
     fn fixture(name: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))

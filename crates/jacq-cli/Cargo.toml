@@ -1,0 +1,29 @@
+[package]
+name = "jacq-cli"
+description = "Command-line interface for the jacq plugin compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+authors.workspace = true
+keywords = ["cli", "compiler", "plugin", "ai", "claude-code"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "../../README.md"
+
+# The binary is named `jacq` (not `jacq-cli`) so users run `jacq ...`
+[[bin]]
+name = "jacq"
+path = "src/main.rs"
+
+[dependencies]
+jacq-core.workspace = true
+clap.workspace = true
+miette.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
