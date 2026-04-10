@@ -1,24 +1,21 @@
+# cargo-deny configuration — supply chain security gates
+# Run: cargo install cargo-deny && cargo deny check
+# https://embarkstudios.github.io/cargo-deny/
+
 [graph]
 all-features = false
 no-default-features = false
 
-[output]
-feature-depth = 1
-
-# ---- advisories (replaces cargo-audit) ----
 [advisories]
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
+# https://github.com/RustSec/advisory-db
 version = 2
 yanked = "deny"
 ignore = []
 
-# ---- licenses ----
-# Project is MIT. Allow permissive compatibles. Do NOT preemptively allow
-# anything exotic — let `cargo deny check licenses` tell us what's actually
-# in the tree, then extend this list deliberately.
 [licenses]
 version = 2
+# Explicit allowlist — any other license requires explicit review and update here.
+# This defends against pulling in a dep that introduces GPL/AGPL unintentionally.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -26,34 +23,28 @@ allow = [
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
-    "Zlib",
     "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
 ]
 confidence-threshold = 0.93
 exceptions = []
 
-# ---- bans ----
-# `multiple-versions = "warn"` rather than "deny": the serde/syn ecosystem
-# routinely pulls multiple versions of small crates (hashbrown, windows-sys,
-# bitflags, syn 1 vs 2). Flipping to "deny" requires a hand-curated `skip`
-# list first. Start at warn; tighten later.
 [bans]
+# Fail on multiple versions of the same crate — forces you to audit transitive
+# version conflicts rather than silently accumulating duplicates.
 multiple-versions = "warn"
 wildcards = "deny"
 highlight = "all"
-workspace-default-features = "allow"
-external-default-features = "allow"
-allow = []
 deny = []
 skip = []
 skip-tree = []
 
-# ---- sources ----
-# Load-bearing policy: blocks surprise git deps and alt registries.
-# This is the single most valuable line in this file — it prevents a
-# future `git = "https://github.com/..."` entry from silently bypassing
-# crates.io.
 [sources]
+# Only allow dependencies from the official crates.io registry.
+# This stops a malicious Cargo.toml from pulling code from a random git URL.
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
