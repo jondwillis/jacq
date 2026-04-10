@@ -88,6 +88,17 @@ fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn st
             copy_component(&mcp.source_path, "mcp server")?;
         }
 
+        // Copy upstream LICENSE file (if present) to preserve legal provenance.
+        // This is essential when redistributing derived content from upstream plugins.
+        for license_name in ["LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"] {
+            let src_license = ir.source_dir.join(license_name);
+            if src_license.exists() {
+                let dst_license = dir.join(license_name);
+                std::fs::copy(&src_license, &dst_license)?;
+                break;
+            }
+        }
+
         println!("Imported from {} → {name}/", source.display());
         println!("  plugin.yaml created with ir_version: 0.1");
         println!(

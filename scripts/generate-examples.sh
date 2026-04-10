@@ -9,6 +9,14 @@ cd "$JACQ_ROOT"
 JACQ="./target/debug/jacq"
 EXAMPLES_DIR="examples"
 
+# Parse flags
+INCLUDE_UNLICENSED=0
+for arg in "$@"; do
+  case "$arg" in
+    --include-unlicensed) INCLUDE_UNLICENSED=1 ;;
+  esac
+done
+
 # Build jacq first
 cargo build --quiet 2>&1
 
@@ -71,10 +79,15 @@ for plugin_dir in vendor/claude-plugins-official/external_plugins/*/; do
   [ -d "$plugin_dir" ] && process_plugin "$plugin_dir" "cc-external"
 done
 
-# --- Cursor marketplace template ---
-for plugin_dir in vendor/cursor-marketplace-template/plugins/*/; do
-  [ -d "$plugin_dir" ] && process_plugin "$plugin_dir" "cursor"
-done
+# --- Cursor marketplace template (unlicensed — skipped by default) ---
+# Cursor plugins don't include a LICENSE file, so we can't redistribute them
+# in the checked-in examples/ directory. Pass --include-unlicensed for local
+# dev inspection, but the output won't be committable.
+if [ "$INCLUDE_UNLICENSED" -eq 1 ]; then
+  for plugin_dir in vendor/cursor-marketplace-template/plugins/*/; do
+    [ -d "$plugin_dir" ] && process_plugin "$plugin_dir" "cursor"
+  done
+fi
 
 # --- Codex bundled skills (in .codex/skills/) ---
 if [ -d "vendor/codex/.codex/skills" ]; then
