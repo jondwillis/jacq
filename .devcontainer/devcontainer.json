@@ -24,14 +24,22 @@
     }
   },
 
-  // Init submodules (vendor/ contains 5 of them — needed for generate-examples.sh
-  // and roundtrip conformance tests to have anything to iterate over) and
-  // bootstrap supply-chain tooling (cargo-deny) via cargo-binstall so sessions
-  // inside the container can run `cargo deny check` without host installs.
-  // cargo-vet is not bootstrapped here because cargo-vet is intentionally
-  // ungated in CI; install it on-demand with `cargo binstall cargo-vet` if you
-  // want to run it locally.
-  "postCreateCommand": "git submodule update --init --recursive && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash && cargo binstall --no-confirm --force cargo-deny",
+  // postCreateCommand sequence:
+  //   1. init submodules (vendor/ contains 5 of them — needed for generate-examples.sh
+  //      and roundtrip conformance tests to have anything to iterate over)
+  //   2. bootstrap cargo-binstall + cargo-deny so sessions inside the container
+  //      can run `cargo deny check` without host installs. cargo-vet is NOT
+  //      bootstrapped here because it is intentionally ungated in CI; install
+  //      on-demand with `cargo binstall cargo-vet` if you want to run it locally.
+  //   3. `cargo fetch` warm-up: populates the persistent cargo registry volume
+  //      with all dep source trees so the first in-container `cargo build` after
+  //      a fresh rebuild isn't cold-starting an empty cache. We intentionally use
+  //      `cargo fetch` (not `cargo build`) because fetch only downloads tarballs
+  //      and does NOT run build scripts or proc-macros — the warm-up step itself
+  //      is therefore attack-surface-free, which matters because one of the
+  //      reasons this container exists is to contain malicious build-script
+  //      execution. See CLAUDE.md for the full sandbox rationale.
+  "postCreateCommand": "git submodule update --init --recursive && curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash && cargo binstall --no-confirm --force cargo-deny && cargo fetch",
 
   "remoteUser": "vscode",
   "mounts": [

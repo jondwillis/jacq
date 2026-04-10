@@ -52,10 +52,56 @@ two unmaintained advisories (`bincode 1.3.3`, `yaml-rust 0.4.5`).
 ## Dev containers
 
 `.devcontainer/devcontainer.json` defines the canonical build environment and
-bootstraps `cargo-deny` via `cargo-binstall` in `postCreateCommand`. Prefer
-running `cargo` inside the container so host secrets (SSH keys, shell history,
-cloud credentials) are not visible to build scripts or proc-macros. If you
-need `cargo-vet` locally, install it on-demand: `cargo binstall cargo-vet`.
+bootstraps `cargo-deny` + a `cargo fetch` warm-up in `postCreateCommand`. If
+you need `cargo-vet` locally, install on-demand: `cargo binstall cargo-vet`.
+
+### What the container is isolating
+
+The devcontainer serves two distinct isolation goals, both load-bearing:
+
+1. **Agent / build-script containment.** Claude Code file writes, `cargo build`
+   scripts, and proc-macros execute inside the container FS, not against the
+   host. A malicious `build.rs` in a dep can touch `/workspaces/jacq` and the
+   cargo cache volume, but cannot reach `~/.ssh`, browser profiles, shell
+   history, cloud credentials, or anything else on the host — those paths
+   simply do not exist inside the container.
+2. **Supply-chain attack surface reduction.** This is the containment layer
+   Kerkour's article recommends as the single highest-ROI mitigation. Combined
+   with `deny.toml`'s `unknown-git = "deny"` (blocks unreviewed git sources)
+   and `cargo-vet`'s trusted imports (audits for 42 of the 165 transitive
+   deps), the container bounds the blast radius of any compromise that slips
+   through the other gates.
+
+### Why persistent cache volumes are intentional
+
+The `mounts` block defines named Docker volumes (`jacq-cargo-cache`,
+`jacq-target-cache`) that survive container rebuilds. This is a **deliberate
+tradeoff** and should not be "fixed" by removing them:
+
+- ✓ Warm cache across rebuilds — `cargo build` stays fast day-to-day.
+- ✓ The isolation boundary is still the container root, not individual volumes.
+  A compromised build script can write to the cargo cache volume, but it
+  still cannot escape to the host FS.
+- ✗ Weakens clean-slate semantics — a persisted cache means a rebuild is not
+  fully pristine. Accept this for dev UX.
+
+**To force a clean slate when you need one** (e.g., after reviewing a
+suspicious dep, or to reproduce a fresh-environment bug):
+
+```bash
+docker volume rm jacq-cargo-cache jacq-target-cache
+# then "Rebuild Container" in VS Code or `devcontainer up --workspace-folder .`
+```
+
+### Why the warm-up uses `cargo fetch`, not `cargo build`
+
+`postCreateCommand` ends with `cargo fetch`. This pre-populates the registry
+volume with dep source trees so the first real in-container `cargo build`
+after a rebuild isn't cold-starting an empty cache. Crucially, `cargo fetch`
+only **downloads tarballs** — it does NOT invoke `build.rs` scripts or
+proc-macros. A `cargo build` warm-up would execute build scripts during
+container creation, before you've had a chance to review anything, which
+would defeat the containment purpose. Keep the warm-up as `fetch`.
 
 ## CI
 
