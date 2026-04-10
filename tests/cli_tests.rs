@@ -198,8 +198,9 @@ mod init {
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
 
         assert!(plugin_dir.join("plugin.yaml").exists());
-        assert!(plugin_dir.join("skills").join("greet.md").exists());
-        assert!(plugin_dir.join("skills").join("farewell.md").exists());
+        // init --from preserves the original source layout (commands/ for CC plugins)
+        assert!(plugin_dir.join("commands").join("greet.md").exists());
+        assert!(plugin_dir.join("commands").join("farewell.md").exists());
     }
 
     #[test]

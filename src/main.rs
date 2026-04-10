@@ -55,26 +55,50 @@ fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn st
         let yaml = serde_yaml::to_string(&manifest)?;
         std::fs::write(dir.join("plugin.yaml"), yaml)?;
 
-        // Copy skills — use ir.source_dir (canonicalized) for path consistency
-        if !ir.skills.is_empty() {
-            let skills_dir = dir.join("skills");
-            std::fs::create_dir_all(&skills_dir)?;
-            for skill in &ir.skills {
-                let skill_path = ir.source_dir.join(&skill.source_path);
-                let content = std::fs::read_to_string(&skill_path).map_err(|e| {
-                    format!(
-                        "failed to read skill '{}' from {}: {e}",
-                        skill.name,
-                        skill_path.display()
-                    )
-                })?;
-                std::fs::write(skills_dir.join(format!("{}.md", skill.name)), content)?;
+        // Copy all source components. Each component preserves its source_path
+        // relative to the original plugin root, so we recreate the same layout.
+        let copy_component = |rel_path: &std::path::Path, name: &str| -> Result<(), Box<dyn std::error::Error>> {
+            let src = ir.source_dir.join(rel_path);
+            let dst = dir.join(rel_path);
+            if let Some(parent) = dst.parent() {
+                std::fs::create_dir_all(parent)?;
             }
+            std::fs::copy(&src, &dst).map_err(|e| {
+                format!("failed to copy {name} '{}' from {}: {e}", rel_path.display(), src.display())
+            })?;
+            Ok(())
+        };
+
+        for skill in &ir.skills {
+            copy_component(&skill.source_path, "skill")?;
+        }
+        for agent in &ir.agents {
+            copy_component(&agent.source_path, "agent")?;
+        }
+        for instr in &ir.instructions {
+            copy_component(&instr.source_path, "instruction")?;
+        }
+        for fragment in &ir.shared {
+            copy_component(&fragment.source_path, "shared fragment")?;
+        }
+        for hook in &ir.hooks {
+            copy_component(&hook.source_path, "hook")?;
+        }
+        for mcp in &ir.mcp_servers {
+            copy_component(&mcp.source_path, "mcp server")?;
         }
 
         println!("Imported from {} → {name}/", source.display());
         println!("  plugin.yaml created with ir_version: 0.1");
-        println!("  {} skill(s) imported", ir.skills.len());
+        println!(
+            "  {} skill(s), {} agent(s), {} hook(s), {} MCP, {} instruction(s), {} shared",
+            ir.skills.len(),
+            ir.agents.len(),
+            ir.hooks.len(),
+            ir.mcp_servers.len(),
+            ir.instructions.len(),
+            ir.shared.len(),
+        );
         println!("\nNext: edit plugin.yaml to add targets and run `jacq build`");
     } else {
         // Scaffold a new plugin

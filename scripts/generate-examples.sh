@@ -29,7 +29,9 @@ has_manifest() {
   [ -f "$dir/plugin.yaml" ]
 }
 
-# Process a single plugin directory
+# Process a single plugin directory.
+# 1. `jacq init --from <source>` copies plugin.yaml + all source components
+# 2. `jacq build` compiles to dist/
 process_plugin() {
   local plugin_dir="$1"
   local source_label="$2"
@@ -41,18 +43,22 @@ process_plugin() {
     return
   fi
 
-  # Parse and build to claude-code target
-  if $JACQ build "$plugin_dir" --target claude-code --output "$out/dist" 2>/dev/null; then
-    # Also import as IR for the plugin.yaml
-    if [ ! -f "$out/plugin.yaml" ]; then
-      $JACQ init "$out.tmp" --from "$plugin_dir" 2>/dev/null && \
-        mv "$out.tmp/plugin.yaml" "$out/plugin.yaml" && \
-        rm -rf "$out.tmp" 2>/dev/null || true
-    fi
+  # Clean any previous output so `jacq init` (which requires empty dir) works
+  rm -rf "$out"
+
+  # Import: copies plugin.yaml + all source components (skills, agents, etc.)
+  if ! $JACQ init "$out" --from "$plugin_dir" >/dev/null 2>&1; then
+    printf "  ❌ %-35s [%s] (init failed)\n" "$name" "$source_label"
+    failed=$((failed + 1))
+    return
+  fi
+
+  # Build: compile the imported example to claude-code target
+  if $JACQ build "$out" --target claude-code --output "$out/dist" >/dev/null 2>&1; then
     printf "  ✅ %-35s [%s]\n" "$name" "$source_label"
     passed=$((passed + 1))
   else
-    printf "  ❌ %-35s [%s]\n" "$name" "$source_label"
+    printf "  ❌ %-35s [%s] (build failed)\n" "$name" "$source_label"
     failed=$((failed + 1))
   fi
 }
