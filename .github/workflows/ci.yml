@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly refresh: a new RustSec advisory against an unchanged dep
+    # breaks CI on Monday even with zero code changes. Highest signal /
+    # effort item in the whole supply-chain setup.
+    - cron: "0 13 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+# Security note (workflow injection): every job below only runs `cargo`
+# subcommands with no interpolation of untrusted GitHub context (issue
+# titles, PR bodies, commit messages, head_ref, etc.). The only ${{ }}
+# expressions in this file are `github.workflow` / `github.ref` for the
+# concurrency group, both of which are trusted. If a future job needs
+# something like github.event.pull_request.title, pass it via `env:` and
+# quote it — never inline into a `run:` string. See
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+jobs:
+  # NOTE: `fmt` job intentionally omitted on initial CI landing — the
+  # existing tree has ~79 rustfmt hunks from before formatting was enforced.
+  # Follow-up: run `cargo fmt --all` in its own commit, then add the job:
+  #
+  #   fmt:
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #       - uses: actions/checkout@v4
+  #       - run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: Swatinem/rust-cache@v2
+      # NOTE: not `-D warnings` yet. The existing tree has ~10 clippy
+      # errors under `-D warnings` (collapsible_if et al.). We still run
+      # clippy so *new* lints show up in PR diffs; tighten to `-D warnings`
+      # after a dedicated clippy cleanup commit.
+      - run: cargo clippy --all-targets --all-features
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories bans licenses sources
