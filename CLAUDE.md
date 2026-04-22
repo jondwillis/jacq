@@ -105,19 +105,10 @@ would defeat the containment purpose. Keep the warm-up as `fetch`.
 
 ## CI
 
-`.github/workflows/ci.yml` runs `clippy`, `test`, and `cargo deny check` (via
-`EmbarkStudios/cargo-deny-action@v2`). The `deny` job also runs on a weekly
-cron (Mondays 13:00 UTC) so newly published RustSec advisories against
-unchanged deps break CI without requiring a code change.
-
-Known gaps (intentional, follow-up work):
-
-- **No `fmt` job.** The existing tree has ~79 `rustfmt` hunks from before
-  formatting was enforced. A dedicated `cargo fmt --all` commit should land
-  before adding the job.
-- **`clippy` runs without `-D warnings`.** The existing tree has ~10 clippy
-  errors under strict mode (mostly `collapsible_if`). Clippy still runs so
-  *new* lints appear in PR diffs; tighten after a dedicated cleanup commit.
+`.github/workflows/ci.yml` runs `fmt --check`, `clippy -D warnings`, `test`,
+and `cargo deny check` (via `EmbarkStudios/cargo-deny-action@v2`). The `deny`
+job also runs on a weekly cron (Mondays 13:00 UTC) so newly published RustSec
+advisories against unchanged deps break CI without requiring a code change.
 
 ## Scope decisions explicitly skipped
 
