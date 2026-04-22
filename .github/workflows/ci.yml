@@ -28,15 +28,12 @@ env:
 # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
 
 jobs:
-  # NOTE: `fmt` job intentionally omitted on initial CI landing — the
-  # existing tree has ~79 rustfmt hunks from before formatting was enforced.
-  # Follow-up: run `cargo fmt --all` in its own commit, then add the job:
-  #
-  #   fmt:
-  #     runs-on: ubuntu-latest
-  #     steps:
-  #       - uses: actions/checkout@v4
-  #       - run: cargo fmt --all -- --check
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
@@ -51,11 +48,7 @@ jobs:
       # rustup swaps toolchains on the first cargo invocation.
       - run: rustup show
       - uses: Swatinem/rust-cache@v2
-      # NOTE: not `-D warnings` yet. The existing tree has ~10 clippy
-      # errors under `-D warnings` (collapsible_if et al.). We still run
-      # clippy so *new* lints show up in PR diffs; tighten to `-D warnings`
-      # after a dedicated clippy cleanup commit.
-      - run: cargo clippy --all-targets --all-features
+      - run: cargo clippy --all-targets --all-features -- -D warnings
 
   test:
     runs-on: ubuntu-latest
