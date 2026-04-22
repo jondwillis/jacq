@@ -263,6 +263,22 @@ mod claude_code {
     }
 
     #[test]
+    fn emits_agents_md_for_portability() {
+        // AGENTS.md is a portability signal for non-Claude tools that read
+        // the dir (Codex, Cursor, Aider, pi). Skills are in commands/*.md
+        // natively, so they should NOT appear in AGENTS.md.
+        let ir = build_ir(vec![Target::ClaudeCode]);
+        let (_tmp, out) = emit_claude_code(&ir);
+
+        assert!(file_exists(&out, "AGENTS.md"));
+        let content = read_file(&out, "AGENTS.md");
+        assert!(content.contains("Always write tests first"));
+        assert!(content.contains("## Available Agents"));
+        assert!(content.contains("reviewer"));
+        assert!(!content.contains("## Available Commands"));
+    }
+
+    #[test]
     fn roundtrip_parse_emitted_claude_code() {
         // Emit a plugin, then parse it back — should produce equivalent IR
         let ir = build_ir(vec![Target::ClaudeCode]);
@@ -320,6 +336,36 @@ mod opencode {
         let content = read_file(&out, "AGENTS.md");
         // Skills should be documented in AGENTS.md since OpenCode has partial skill support
         assert!(content.contains("search"));
+    }
+}
+
+// ===========================================================================
+// Cursor emitter
+// ===========================================================================
+
+mod cursor {
+    use super::*;
+
+    fn emit_cursor(ir: &PluginIR) -> (TempDir, PathBuf) {
+        let tmp = TempDir::new().unwrap();
+        emit(ir, tmp.path()).unwrap();
+        let out = tmp.path().join("cursor");
+        (tmp, out)
+    }
+
+    #[test]
+    fn emits_agents_md_for_portability() {
+        // Cursor has its own commands/ and rules/ layouts, but AGENTS.md
+        // adds reach to non-Cursor tools that read the dir. Skills stay
+        // in commands/*.md natively.
+        let ir = build_ir(vec![Target::Cursor]);
+        let (_tmp, out) = emit_cursor(&ir);
+
+        assert!(file_exists(&out, "AGENTS.md"));
+        let content = read_file(&out, "AGENTS.md");
+        assert!(content.contains("Always write tests first"));
+        assert!(content.contains("## Available Agents"));
+        assert!(!content.contains("## Available Commands"));
     }
 }
 

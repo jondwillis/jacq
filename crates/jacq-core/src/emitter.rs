@@ -205,6 +205,14 @@ fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<
         write_file(&dir.join("CLAUDE.md"), &content)?;
     }
 
+    // AGENTS.md — portability signal for non-Claude tools that read the dir
+    // (OpenAI Codex, Cursor, Aider, pi, etc.). Skills are intentionally
+    // excluded: they live in commands/*.md natively.
+    let agents_md = render_agents_md(ir, false, engine)?;
+    if !agents_md.is_empty() {
+        write_file(&dir.join("AGENTS.md"), &agents_md)?;
+    }
+
     Ok(())
 }
 
@@ -293,6 +301,13 @@ fn emit_cursor(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
             let content = engine.render(&instr.body)?;
             write_file(&rules_dir.join(format!("{}.mdc", instr.name)), &content)?;
         }
+    }
+
+    // AGENTS.md — same portability signal as Claude Code (skills are in
+    // commands/*.md natively, so include_skills=false).
+    let agents_md = render_agents_md(ir, false, engine)?;
+    if !agents_md.is_empty() {
+        write_file(&dir.join("AGENTS.md"), &agents_md)?;
     }
 
     Ok(())
