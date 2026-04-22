@@ -179,6 +179,10 @@ fn infer_capabilities(ir: &PluginIR) -> BTreeSet<String> {
         caps.insert("instructions".to_string());
     }
 
+    if !ir.lsp_servers.is_empty() {
+        caps.insert("lsp-servers".to_string());
+    }
+
     caps
 }
 

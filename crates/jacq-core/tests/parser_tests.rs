@@ -166,6 +166,20 @@ mod ir_format {
     }
 
     #[test]
+    fn discovers_lsp_servers() {
+        let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
+        assert_eq!(ir.lsp_servers.len(), 1);
+        let lsp = &ir.lsp_servers[0];
+        assert_eq!(lsp.name, "rust-analyzer");
+        assert_eq!(lsp.command, "rust-analyzer");
+        assert_eq!(
+            lsp.extension_to_language.get("rs").map(|s| s.as_str()),
+            Some("rust")
+        );
+        assert!(lsp.initialization_options.is_some());
+    }
+
+    #[test]
     fn discovers_instructions() {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
         assert_eq!(ir.instructions.len(), 1);

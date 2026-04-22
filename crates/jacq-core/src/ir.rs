@@ -315,6 +315,7 @@ pub enum CapabilityCategory {
     Commands,
     Hooks,
     Instructions,
+    LspServers,
     McpServers,
     Skills,
 }
@@ -337,12 +338,13 @@ impl TryFrom<String> for Capability {
             "agents" => CapabilityCategory::Agents,
             "hooks" => CapabilityCategory::Hooks,
             "mcp-servers" => CapabilityCategory::McpServers,
+            "lsp-servers" => CapabilityCategory::LspServers,
             "instructions" => CapabilityCategory::Instructions,
             "commands" => CapabilityCategory::Commands,
             _ => {
                 return Err(format!(
-                    "unknown capability category '{cat_str}'. \
-                     Valid categories: skills, agents, hooks, mcp-servers, instructions, commands"
+                    "unknown capability category '{cat_str}'. Valid categories: \
+                     skills, agents, hooks, mcp-servers, lsp-servers, instructions, commands"
                 ));
             }
         };
@@ -357,6 +359,7 @@ impl From<Capability> for String {
             CapabilityCategory::Agents => "agents",
             CapabilityCategory::Hooks => "hooks",
             CapabilityCategory::McpServers => "mcp-servers",
+            CapabilityCategory::LspServers => "lsp-servers",
             CapabilityCategory::Instructions => "instructions",
             CapabilityCategory::Commands => "commands",
         };

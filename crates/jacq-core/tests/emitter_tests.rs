@@ -109,6 +109,24 @@ fn sample_instruction() -> InstructionDef {
     }
 }
 
+fn sample_lsp() -> LspServerDef {
+    LspServerDef {
+        name: "rust-analyzer".to_string(),
+        command: "rust-analyzer".to_string(),
+        args: vec![],
+        extension_to_language: BTreeMap::from([("rs".to_string(), "rust".to_string())]),
+        transport: None,
+        env: BTreeMap::new(),
+        initialization_options: Some(serde_json::json!({"cargo": {"allFeatures": true}})),
+        settings: None,
+        workspace_folder: None,
+        startup_timeout: None,
+        shutdown_timeout: None,
+        restart_on_crash: None,
+        max_restarts: None,
+    }
+}
+
 fn build_ir(targets: Vec<Target>) -> PluginIR {
     PluginIR {
         manifest: ir_manifest("test-plugin", targets),
@@ -118,7 +136,7 @@ fn build_ir(targets: Vec<Target>) -> PluginIR {
         mcp_servers: vec![sample_mcp()],
         instructions: vec![sample_instruction()],
         output_styles: vec![],
-        lsp_servers: vec![],
+        lsp_servers: vec![sample_lsp()],
         shared: vec![],
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),
@@ -214,6 +232,24 @@ mod claude_code {
 
         assert!(parsed["mcpServers"]["db-server"].is_object());
         assert_eq!(parsed["mcpServers"]["db-server"]["command"], "npx");
+    }
+
+    #[test]
+    fn emits_lsp_json() {
+        let ir = build_ir(vec![Target::ClaudeCode]);
+        let (_tmp, out) = emit_claude_code(&ir);
+
+        assert!(file_exists(&out, ".lsp.json"));
+        let content = read_file(&out, ".lsp.json");
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        let entry = &parsed["lspServers"]["rust-analyzer"];
+        assert!(entry.is_object());
+        assert_eq!(entry["command"], "rust-analyzer");
+        assert_eq!(entry["extensionToLanguage"]["rs"], "rust");
+        assert_eq!(entry["initializationOptions"]["cargo"]["allFeatures"], true);
+        // The name field should be lifted into the map key, not duplicated in value.
+        assert!(entry.get("name").is_none());
     }
 
     #[test]

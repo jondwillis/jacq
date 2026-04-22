@@ -193,6 +193,12 @@ fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<
         write_json(dir, ".mcp.json", &mcp_config)?;
     }
 
+    // .lsp.json — LSP server configuration
+    if !ir.lsp_servers.is_empty() {
+        let lsp_config = render_lsp_json(&ir.lsp_servers);
+        write_json(dir, ".lsp.json", &lsp_config)?;
+    }
+
     // CLAUDE.md — instructions
     if !ir.instructions.is_empty() {
         let content = render_instructions(&ir.instructions, engine)?;
@@ -469,6 +475,22 @@ fn render_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
         mcp_servers.insert(server.name.clone(), serde_json::Value::Object(entry));
     }
     serde_json::json!({ "mcpServers": mcp_servers })
+}
+
+/// Render `.lsp.json` — keyed by server name, mirroring `.mcp.json`'s shape.
+/// LspServerDef already carries serde renames (`extensionToLanguage`,
+/// `initializationOptions`, etc.), so we serialize each def whole and lift
+/// `name` out into the map key.
+fn render_lsp_json(servers: &[LspServerDef]) -> serde_json::Value {
+    let mut lsp_servers = serde_json::Map::new();
+    for server in servers {
+        let Ok(serde_json::Value::Object(mut entry)) = serde_json::to_value(server) else {
+            continue;
+        };
+        entry.remove("name");
+        lsp_servers.insert(server.name.clone(), serde_json::Value::Object(entry));
+    }
+    serde_json::json!({ "lspServers": lsp_servers })
 }
 
 /// Render instructions with blank-line separation between files.

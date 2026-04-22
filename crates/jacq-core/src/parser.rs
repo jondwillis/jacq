@@ -44,6 +44,7 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
     let target_overrides = parse_target_overrides(&dir, &manifest)?;
 
     let output_styles = parse_output_style_files(&dir)?;
+    let lsp_servers = parse_lsp_files(&dir)?;
 
     Ok(PluginIR {
         manifest,
@@ -53,7 +54,7 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         mcp_servers,
         instructions,
         output_styles,
-        lsp_servers: vec![], // TODO: parse from .lsp.json
+        lsp_servers,
         shared,
         target_overrides,
         source_dir: dir,
@@ -393,6 +394,40 @@ fn parse_mcp_files(dir: &Path) -> Result<Vec<McpServerDef>> {
                 reason: e.to_string(),
             })?;
         server.source_path = rel_path;
+        servers.push(server);
+    }
+
+    servers.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(servers)
+}
+
+// ---------------------------------------------------------------------------
+// LSP server parsing (.json files)
+// ---------------------------------------------------------------------------
+//
+// LSP configs are JSON in the wild (VS Code settings, Claude Code's lsp blocks)
+// and `LspServerDef` carries `serde_json::Value` fields for free-form
+// initializationOptions/settings, so JSON is the natural on-disk format.
+
+fn parse_lsp_files(dir: &Path) -> Result<Vec<LspServerDef>> {
+    let lsp_dir = dir.join("lsp");
+    if !lsp_dir.exists() {
+        return Ok(vec![]);
+    }
+
+    let entries = walk_files(&lsp_dir, 1, &["json"])?;
+    let mut servers = Vec::new();
+
+    for entry in entries {
+        let path = entry.path();
+        let content = read_file(path)?;
+        let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
+
+        let server: LspServerDef =
+            serde_json::from_str(&content).map_err(|e| JacqError::InvalidFrontmatter {
+                path: rel_path,
+                reason: e.to_string(),
+            })?;
         servers.push(server);
     }
 

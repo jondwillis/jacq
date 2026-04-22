@@ -145,6 +145,7 @@ pub const CAPABILITY_KEYS: &[&str] = &[
     "hooks.stop",
     "mcp-servers",
     "instructions",
+    "lsp-servers",
 ];
 
 /// Build a capability matrix from support levels in CAPABILITY_KEYS order.
@@ -273,21 +274,21 @@ pub fn capability_matrix(target: Target) -> CapabilityMatrix {
     use SupportLevel::*;
 
     match target {
-        //                          skills   commands agents  ag.sub  hooks   h.pre   h.post  h.stop  mcp     instr
-        Target::ClaudeCode => {
-            build_matrix(&[Full, Full, Full, Full, Full, Full, Full, Full, Full, Full])
-        }
+        //                          skills   commands agents  ag.sub  hooks   h.pre   h.post  h.stop  mcp     instr   lsp
+        Target::ClaudeCode => build_matrix(&[
+            Full, Full, Full, Full, Full, Full, Full, Full, Full, Full, Full,
+        ]),
         Target::OpenCode => build_matrix(&[
-            Partial, Partial, Partial, Partial, Partial, Partial, None, Partial, Full, Full,
+            Partial, Partial, Partial, Partial, Partial, Partial, None, Partial, Full, Full, None,
         ]),
         Target::Codex => build_matrix(&[
-            Full, Full, Partial, Partial, Flags, Flags, None, None, Full, Full,
+            Full, Full, Partial, Partial, Flags, Flags, None, None, Full, Full, None,
         ]),
         Target::Cursor => build_matrix(&[
-            Partial, Partial, Partial, None, None, None, None, None, Full, Full,
+            Partial, Partial, Partial, None, None, None, None, None, Full, Full, None,
         ]),
         Target::OpenClaw => build_matrix(&[
-            Partial, Partial, None, None, None, None, None, None, Partial, Full,
+            Partial, Partial, None, None, None, None, None, None, Partial, Full, None,
         ]),
     }
 }

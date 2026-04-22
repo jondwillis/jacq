@@ -19,3 +19,5 @@ requires:
 fallbacks:
   hooks.pre-tool-use:
     opencode: instruction-based
+  lsp-servers:
+    opencode: skip
