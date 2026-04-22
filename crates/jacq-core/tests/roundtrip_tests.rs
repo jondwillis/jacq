@@ -30,10 +30,7 @@ fn vendor_external_dir() -> PathBuf {
 /// Try to parse a plugin, returning None if it fails (some plugins have
 /// malformed frontmatter that we don't handle yet).
 fn try_parse(dir: &Path) -> Option<jacq_core::ir::PluginIR> {
-    match parse_plugin(dir) {
-        Ok(ir) => Some(ir),
-        Err(_) => None,
-    }
+    parse_plugin(dir).ok()
 }
 
 /// Sanitize YAML by quoting values with problematic characters (mirrors parser logic).
@@ -327,7 +324,7 @@ fn compare_md_dir(
     {
         let entry = entry.map_err(|e| format!("{plugin_name}: {e}"))?;
         let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "md") {
+        if path.extension().is_some_and(|ext| ext == "md") {
             let name = path.file_name().unwrap().to_string_lossy().to_string();
             let content = std::fs::read_to_string(&path)
                 .map_err(|e| format!("{plugin_name}: read {}: {e}", path.display()))?;

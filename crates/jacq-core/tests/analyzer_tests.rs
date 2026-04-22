@@ -157,7 +157,7 @@ mod inference {
         ir.skills.push(skill("search"));
 
         let report = analyze(&ir);
-        assert!(report.inferred_capabilities.contains(&"skills".to_string()));
+        assert!(report.inferred_capabilities.contains("skills"));
     }
 
     #[test]
@@ -166,7 +166,7 @@ mod inference {
         ir.agents.push(agent("reviewer"));
 
         let report = analyze(&ir);
-        assert!(report.inferred_capabilities.contains(&"agents".to_string()));
+        assert!(report.inferred_capabilities.contains("agents"));
     }
 
     #[test]
@@ -177,18 +177,10 @@ mod inference {
 
         let report = analyze(&ir);
         // Specific hook types inferred, not the parent "hooks"
+        assert!(report.inferred_capabilities.contains("hooks.pre-tool-use"));
+        assert!(report.inferred_capabilities.contains("hooks.stop"));
         assert!(
-            report
-                .inferred_capabilities
-                .contains(&"hooks.pre-tool-use".to_string())
-        );
-        assert!(
-            report
-                .inferred_capabilities
-                .contains(&"hooks.stop".to_string())
-        );
-        assert!(
-            !report.inferred_capabilities.contains(&"hooks".to_string()),
+            !report.inferred_capabilities.contains("hooks"),
             "parent 'hooks' should not be inferred when specifics are present"
         );
     }
@@ -199,11 +191,7 @@ mod inference {
         ir.mcp_servers.push(mcp_server("db"));
 
         let report = analyze(&ir);
-        assert!(
-            report
-                .inferred_capabilities
-                .contains(&"mcp-servers".to_string())
-        );
+        assert!(report.inferred_capabilities.contains("mcp-servers"));
     }
 
     #[test]
@@ -216,11 +204,7 @@ mod inference {
         });
 
         let report = analyze(&ir);
-        assert!(
-            report
-                .inferred_capabilities
-                .contains(&"instructions".to_string())
-        );
+        assert!(report.inferred_capabilities.contains("instructions"));
     }
 }
 

@@ -82,66 +82,66 @@ fn build_manifest_json(manifest: &PluginManifest, target: Target) -> serde_json:
             obj.insert("author".into(), v);
         }
     }
-    if has("license") {
-        if let Some(v) = &manifest.license {
-            obj.insert("license".into(), serde_json::json!(v));
-        }
+    if has("license")
+        && let Some(v) = &manifest.license
+    {
+        obj.insert("license".into(), serde_json::json!(v));
     }
     if has("keywords") && !manifest.keywords.is_empty() {
         obj.insert("keywords".into(), serde_json::json!(manifest.keywords));
     }
 
     // URLs
-    if has("homepage") {
-        if let Some(v) = &manifest.homepage {
-            obj.insert("homepage".into(), serde_json::json!(v));
-        }
+    if has("homepage")
+        && let Some(v) = &manifest.homepage
+    {
+        obj.insert("homepage".into(), serde_json::json!(v));
     }
-    if has("repository") {
-        if let Some(v) = &manifest.repository {
-            obj.insert("repository".into(), serde_json::json!(v));
-        }
+    if has("repository")
+        && let Some(v) = &manifest.repository
+    {
+        obj.insert("repository".into(), serde_json::json!(v));
     }
 
     // Cursor-specific
-    if has("displayName") {
-        if let Some(v) = &manifest.display_name {
-            obj.insert("displayName".into(), serde_json::json!(v));
-        }
+    if has("displayName")
+        && let Some(v) = &manifest.display_name
+    {
+        obj.insert("displayName".into(), serde_json::json!(v));
     }
-    if has("logo") {
-        if let Some(v) = &manifest.logo {
-            obj.insert("logo".into(), serde_json::json!(v));
-        }
+    if has("logo")
+        && let Some(v) = &manifest.logo
+    {
+        obj.insert("logo".into(), serde_json::json!(v));
     }
 
     // Codex-specific
-    if has("apps") {
-        if let Some(v) = &manifest.apps {
-            obj.insert("apps".into(), serde_json::json!(v));
-        }
+    if has("apps")
+        && let Some(v) = &manifest.apps
+    {
+        obj.insert("apps".into(), serde_json::json!(v));
     }
-    if has("interface") {
-        if let Some(v) = &manifest.interface {
-            obj.insert("interface".into(), v.clone());
-        }
+    if has("interface")
+        && let Some(v) = &manifest.interface
+    {
+        obj.insert("interface".into(), v.clone());
     }
 
     // OpenClaw-specific
-    if has("id") {
-        if let Some(v) = &manifest.id {
-            obj.insert("id".into(), serde_json::json!(v));
-        }
+    if has("id")
+        && let Some(v) = &manifest.id
+    {
+        obj.insert("id".into(), serde_json::json!(v));
     }
-    if has("configSchema") {
-        if let Some(v) = &manifest.config_schema {
-            obj.insert("configSchema".into(), v.clone());
-        }
+    if has("configSchema")
+        && let Some(v) = &manifest.config_schema
+    {
+        obj.insert("configSchema".into(), v.clone());
     }
-    if has("providers") {
-        if let Some(v) = &manifest.providers {
-            obj.insert("providers".into(), serde_json::json!(v));
-        }
+    if has("providers")
+        && let Some(v) = &manifest.providers
+    {
+        obj.insert("providers".into(), serde_json::json!(v));
     }
 
     serde_json::Value::Object(obj)
