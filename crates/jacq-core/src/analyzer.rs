@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ir::*;
-use crate::targets::{capability_matrix, SupportLevel, Target};
+use crate::targets::{SupportLevel, Target, capability_matrix};
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -34,7 +34,10 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
         let mut warning_count = 0;
 
         for cap_key in &inferred {
-            let support = matrix.get(cap_key.as_str()).copied().unwrap_or(SupportLevel::None);
+            let support = matrix
+                .get(cap_key.as_str())
+                .copied()
+                .unwrap_or(SupportLevel::None);
 
             // Look up fallback: try parsing the key as a Capability for typed lookup
             let fallback = Capability::try_from(cap_key.clone())
@@ -198,12 +201,8 @@ fn fallback_description(fb: &FallbackStrategy) -> &'static str {
         FallbackStrategy::InstructionBased => {
             "feature will be emitted as instructions/rules instead of native hook"
         }
-        FallbackStrategy::PromptTemplate => {
-            "feature will be emitted as a saved prompt template"
-        }
-        FallbackStrategy::AgentsMdSection => {
-            "feature will be emitted as a section in AGENTS.md"
-        }
+        FallbackStrategy::PromptTemplate => "feature will be emitted as a saved prompt template",
+        FallbackStrategy::AgentsMdSection => "feature will be emitted as a section in AGENTS.md",
     }
 }
 
@@ -226,19 +225,28 @@ pub struct AnalysisReport {
 
 impl AnalysisReport {
     pub fn is_ok(&self) -> bool {
-        !self.diagnostics.iter().any(|d| d.severity == Severity::Error)
+        !self
+            .diagnostics
+            .iter()
+            .any(|d| d.severity == Severity::Error)
     }
 
     pub fn errors(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics.iter().filter(|d| d.severity == Severity::Error)
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
     }
 
     pub fn warnings(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics.iter().filter(|d| d.severity == Severity::Warning)
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
     }
 
     pub fn infos(&self) -> impl Iterator<Item = &Diagnostic> {
-        self.diagnostics.iter().filter(|d| d.severity == Severity::Info)
+        self.diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Info)
     }
 
     pub fn for_target(&self, target: Target) -> impl Iterator<Item = &Diagnostic> {

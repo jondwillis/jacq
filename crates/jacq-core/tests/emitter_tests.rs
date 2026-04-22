@@ -93,7 +93,10 @@ fn sample_mcp() -> McpServerDef {
         source_path: PathBuf::from("mcp/db-server.yaml"),
         command: "npx".to_string(),
         args: vec!["-y".to_string(), "@test/db-mcp".to_string()],
-        env: BTreeMap::from([("DB_URL".to_string(), "postgres://localhost/test".to_string())]),
+        env: BTreeMap::from([(
+            "DB_URL".to_string(),
+            "postgres://localhost/test".to_string(),
+        )]),
         cwd: None,
     }
 }

@@ -184,7 +184,9 @@ fn plugin_json_matches(original: &str, emitted: &str) -> Result<(), String> {
                 ));
             }
             None => {
-                return Err(format!("plugin.json field '{key}' missing in emitted output"));
+                return Err(format!(
+                    "plugin.json field '{key}' missing in emitted output"
+                ));
             }
         }
     }
@@ -320,8 +322,8 @@ fn compare_md_dir(
 
     // Collect original .md files
     let mut orig_files: BTreeMap<String, String> = BTreeMap::new();
-    for entry in std::fs::read_dir(orig_dir)
-        .map_err(|e| format!("{plugin_name}: read {dir_name}: {e}"))?
+    for entry in
+        std::fs::read_dir(orig_dir).map_err(|e| format!("{plugin_name}: read {dir_name}: {e}"))?
     {
         let entry = entry.map_err(|e| format!("{plugin_name}: {e}"))?;
         let path = entry.path();

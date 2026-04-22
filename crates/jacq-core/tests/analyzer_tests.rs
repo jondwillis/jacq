@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use jacq_core::analyzer::{analyze, Severity};
+use jacq_core::analyzer::{Severity, analyze};
 use jacq_core::ir::*;
 use jacq_core::targets::Target;
 
@@ -134,7 +134,10 @@ mod basic {
 
     #[test]
     fn report_has_per_target_summaries() {
-        let ir = empty_ir(minimal_manifest("test", vec![Target::ClaudeCode, Target::Cursor]));
+        let ir = empty_ir(minimal_manifest(
+            "test",
+            vec![Target::ClaudeCode, Target::Cursor],
+        ));
         let report = analyze(&ir);
         assert!(report.target_summaries.contains_key(&Target::ClaudeCode));
         assert!(report.target_summaries.contains_key(&Target::Cursor));
@@ -174,8 +177,16 @@ mod inference {
 
         let report = analyze(&ir);
         // Specific hook types inferred, not the parent "hooks"
-        assert!(report.inferred_capabilities.contains(&"hooks.pre-tool-use".to_string()));
-        assert!(report.inferred_capabilities.contains(&"hooks.stop".to_string()));
+        assert!(
+            report
+                .inferred_capabilities
+                .contains(&"hooks.pre-tool-use".to_string())
+        );
+        assert!(
+            report
+                .inferred_capabilities
+                .contains(&"hooks.stop".to_string())
+        );
         assert!(
             !report.inferred_capabilities.contains(&"hooks".to_string()),
             "parent 'hooks' should not be inferred when specifics are present"
@@ -188,7 +199,11 @@ mod inference {
         ir.mcp_servers.push(mcp_server("db"));
 
         let report = analyze(&ir);
-        assert!(report.inferred_capabilities.contains(&"mcp-servers".to_string()));
+        assert!(
+            report
+                .inferred_capabilities
+                .contains(&"mcp-servers".to_string())
+        );
     }
 
     #[test]
@@ -201,7 +216,11 @@ mod inference {
         });
 
         let report = analyze(&ir);
-        assert!(report.inferred_capabilities.contains(&"instructions".to_string()));
+        assert!(
+            report
+                .inferred_capabilities
+                .contains(&"instructions".to_string())
+        );
     }
 }
 
@@ -222,9 +241,11 @@ mod unsupported {
 
         let errors: Vec<_> = report.errors().collect();
         assert!(!errors.is_empty());
-        assert!(errors.iter().any(|d| {
-            d.target == Target::Cursor && d.capability.contains("hooks")
-        }));
+        assert!(
+            errors
+                .iter()
+                .any(|d| { d.target == Target::Cursor && d.capability.contains("hooks") })
+        );
     }
 
     #[test]
@@ -261,9 +282,11 @@ mod unsupported {
 
         let report = analyze(&ir);
         let warnings: Vec<_> = report.warnings().collect();
-        assert!(warnings.iter().any(|d| {
-            d.target == Target::Codex && d.capability.contains("hooks")
-        }));
+        assert!(
+            warnings
+                .iter()
+                .any(|d| { d.target == Target::Codex && d.capability.contains("hooks") })
+        );
     }
 
     #[test]
@@ -275,7 +298,10 @@ mod unsupported {
         ir.mcp_servers.push(mcp_server("db"));
 
         let report = analyze(&ir);
-        assert!(report.is_ok(), "Claude Code supports everything: {report:?}");
+        assert!(
+            report.is_ok(),
+            "Claude Code supports everything: {report:?}"
+        );
     }
 
     #[test]
@@ -324,9 +350,11 @@ mod fallbacks {
 
         // Should be info instead
         let infos: Vec<_> = report.infos().collect();
-        assert!(infos.iter().any(|d| {
-            d.target == Target::Cursor && d.capability.contains("hooks")
-        }));
+        assert!(
+            infos
+                .iter()
+                .any(|d| { d.target == Target::Cursor && d.capability.contains("hooks") })
+        );
     }
 
     #[test]
@@ -365,10 +393,7 @@ mod fallbacks {
 
     #[test]
     fn fallback_only_applies_to_declared_target() {
-        let mut manifest = minimal_manifest(
-            "test",
-            vec![Target::Cursor, Target::OpenClaw],
-        );
+        let mut manifest = minimal_manifest("test", vec![Target::Cursor, Target::OpenClaw]);
         // Fallback only for Cursor, not OpenClaw
         manifest.fallbacks.insert(
             Capability::try_from("hooks.pre-tool-use".to_string()).unwrap(),
@@ -416,7 +441,10 @@ mod report {
         assert!(cc.compatible(), "Claude Code should be fully compatible");
 
         let cursor = &report.target_summaries[&Target::Cursor];
-        assert!(!cursor.compatible(), "Cursor should not be fully compatible");
+        assert!(
+            !cursor.compatible(),
+            "Cursor should not be fully compatible"
+        );
     }
 
     #[test]

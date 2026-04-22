@@ -50,7 +50,9 @@ fn extract_variables(body: &str) -> Vec<VariableRef> {
             }
             let name_start = i;
             // Collect name characters (alphanumeric + underscore + hyphen)
-            while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-') {
+            while i < len
+                && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
+            {
                 i += 1;
             }
             let name_end = i;
@@ -136,18 +138,19 @@ pub fn validate(ir: &PluginIR) -> Vec<JacqError> {
     let shared_names: std::collections::HashSet<&str> =
         ir.shared.iter().map(|f| f.name.as_str()).collect();
 
-    let check_includes = |body: &BodyContent, path: &std::path::Path, errors: &mut Vec<JacqError>| {
-        if let BodyContent::Template(tmpl) = body {
-            for inc in &tmpl.includes {
-                if !shared_names.contains(inc.as_str()) {
-                    errors.push(JacqError::MissingInclude {
-                        name: inc.clone(),
-                        path: path.to_path_buf(),
-                    });
+    let check_includes =
+        |body: &BodyContent, path: &std::path::Path, errors: &mut Vec<JacqError>| {
+            if let BodyContent::Template(tmpl) = body {
+                for inc in &tmpl.includes {
+                    if !shared_names.contains(inc.as_str()) {
+                        errors.push(JacqError::MissingInclude {
+                            name: inc.clone(),
+                            path: path.to_path_buf(),
+                        });
+                    }
                 }
             }
-        }
-    };
+        };
 
     for skill in &ir.skills {
         check_includes(&skill.body, &skill.source_path, &mut errors);
@@ -522,7 +525,9 @@ mod tests {
         extract_all(&mut ir);
         let errors = validate(&ir);
         assert_eq!(errors.len(), 1);
-        assert!(matches!(&errors[0], JacqError::UndeclaredVariable { name, .. } if name == "undefined_var"));
+        assert!(
+            matches!(&errors[0], JacqError::UndeclaredVariable { name, .. } if name == "undefined_var")
+        );
     }
 
     #[test]
@@ -583,7 +588,9 @@ mod tests {
         };
         let errors = validate(&ir);
         assert_eq!(errors.len(), 1);
-        assert!(matches!(&errors[0], JacqError::MissingVariableValue { name, target } if name == "args" && *target == Target::Codex));
+        assert!(
+            matches!(&errors[0], JacqError::MissingVariableValue { name, target } if name == "args" && *target == Target::Codex)
+        );
     }
 
     // -- Include tests --
@@ -716,7 +723,9 @@ mod tests {
         };
         let errors = validate(&ir);
         assert_eq!(errors.len(), 1);
-        assert!(matches!(&errors[0], JacqError::MissingInclude { name, .. } if name == "nonexistent"));
+        assert!(
+            matches!(&errors[0], JacqError::MissingInclude { name, .. } if name == "nonexistent")
+        );
     }
 
     #[test]

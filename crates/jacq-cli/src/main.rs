@@ -24,9 +24,7 @@ fn main() {
         } => cmd_build(&path, target, strict, output.as_deref()),
         cli::Command::Test { path, target, .. } => cmd_validate(&path, target),
         cli::Command::Inspect { path } => cmd_inspect(&path),
-        cli::Command::Pack { .. } => {
-            Err("jacq pack is not yet implemented".into())
-        }
+        cli::Command::Pack { .. } => Err("jacq pack is not yet implemented".into()),
     };
 
     if let Err(e) = result {
@@ -58,17 +56,22 @@ fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn st
 
         // Copy all source components. Each component preserves its source_path
         // relative to the original plugin root, so we recreate the same layout.
-        let copy_component = |rel_path: &std::path::Path, name: &str| -> Result<(), Box<dyn std::error::Error>> {
-            let src = ir.source_dir.join(rel_path);
-            let dst = dir.join(rel_path);
-            if let Some(parent) = dst.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::copy(&src, &dst).map_err(|e| {
-                format!("failed to copy {name} '{}' from {}: {e}", rel_path.display(), src.display())
-            })?;
-            Ok(())
-        };
+        let copy_component =
+            |rel_path: &std::path::Path, name: &str| -> Result<(), Box<dyn std::error::Error>> {
+                let src = ir.source_dir.join(rel_path);
+                let dst = dir.join(rel_path);
+                if let Some(parent) = dst.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::copy(&src, &dst).map_err(|e| {
+                    format!(
+                        "failed to copy {name} '{}' from {}: {e}",
+                        rel_path.display(),
+                        src.display()
+                    )
+                })?;
+                Ok(())
+            };
 
         for skill in &ir.skills {
             copy_component(&skill.source_path, "skill")?;
@@ -209,7 +212,12 @@ fn cmd_validate(
         if diag.severity == Severity::Error {
             has_errors = true;
         }
-        println!("  [{}] [{}] {}", diag.severity.label(), diag.target, diag.message);
+        println!(
+            "  [{}] [{}] {}",
+            diag.severity.label(),
+            diag.target,
+            diag.message
+        );
     }
 
     for (target_name, summary) in &report.target_summaries {
@@ -254,7 +262,10 @@ fn cmd_build(
     }
 
     if ir.manifest.targets.is_empty() {
-        return Err("no targets declared in plugin manifest. Add targets to plugin.yaml or use --target".into());
+        return Err(
+            "no targets declared in plugin manifest. Add targets to plugin.yaml or use --target"
+                .into(),
+        );
     }
 
     let report = analyzer::analyze(&ir);
@@ -297,14 +308,22 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
         println!(
             "  Skills:       {}  ({})",
             ir.skills.len(),
-            ir.skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
+            ir.skills
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
     if !ir.agents.is_empty() {
         println!(
             "  Agents:       {}  ({})",
             ir.agents.len(),
-            ir.agents.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
+            ir.agents
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
     if !ir.hooks.is_empty() {
@@ -314,14 +333,22 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
         println!(
             "  MCP servers:  {}  ({})",
             ir.mcp_servers.len(),
-            ir.mcp_servers.iter().map(|s| s.name.as_str()).collect::<Vec<_>>().join(", ")
+            ir.mcp_servers
+                .iter()
+                .map(|s| s.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
     if !ir.shared.is_empty() {
         println!(
             "  Shared:       {}  ({})",
             ir.shared.len(),
-            ir.shared.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join(", ")
+            ir.shared
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
     if !ir.instructions.is_empty() {
@@ -333,12 +360,20 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
         return Ok(());
     }
 
-    println!("\nTargets: {}", ir.manifest.targets.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(", "));
+    println!(
+        "\nTargets: {}",
+        ir.manifest
+            .targets
+            .iter()
+            .map(|t| t.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
     let report = analyzer::analyze(&ir);
     println!();
 
-    use jacq_core::targets::{capability_matrix, SupportLevel, CAPABILITY_KEYS};
+    use jacq_core::targets::{CAPABILITY_KEYS, SupportLevel, capability_matrix};
 
     println!("Capability Matrix:");
     print!("  {:24}", "");
@@ -365,7 +400,11 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
 
     println!();
     for (target_name, summary) in &report.target_summaries {
-        let status = if summary.compatible() { "Compatible" } else { "Incompatible" };
+        let status = if summary.compatible() {
+            "Compatible"
+        } else {
+            "Incompatible"
+        };
         println!(
             "  {target_name}: {status} ({} error(s), {} warning(s))",
             summary.error_count, summary.warning_count
@@ -375,7 +414,12 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
     if !report.diagnostics.is_empty() {
         println!();
         for diag in &report.diagnostics {
-            println!("  [{}] [{}] {}", diag.severity.label(), diag.target, diag.message);
+            println!(
+                "  [{}] [{}] {}",
+                diag.severity.label(),
+                diag.target,
+                diag.message
+            );
         }
     }
 

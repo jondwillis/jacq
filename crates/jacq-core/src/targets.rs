@@ -238,11 +238,26 @@ pub fn field_matrix(target: Target) -> BTreeMap<String, FieldSupport> {
 
     match target {
         //                                name ver  desc auth lic  kw   home repo cmds agts skls hook mcp  oSty lsp  uCfg chan  dNam logo apps intf id   cSch prov
-        Target::ClaudeCode => build_field_matrix(&[Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  No,  No,  No,  No,  No]),
-        Target::OpenCode   => build_field_matrix(&[Yes, Yes, Yes, No,  Yes, Yes, No,  No,  No,  Yes, No,  No,  Yes, No,  Yes, No,  No,  No,  No,  No,  No,  No,  No,  No]),
-        Target::Codex      => build_field_matrix(&[Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  No,  No,  Yes, No,  Yes, No,  No,  No,  No,  No,  No,  Yes, Yes, No,  No,  No]),
-        Target::Cursor     => build_field_matrix(&[Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, No,  No,  No,  No,  No]),
-        Target::OpenClaw   => build_field_matrix(&[Yes, Yes, Yes, No,  No,  No,  No,  No,  No,  No,  Yes, No,  No,  No,  No,  No,  Yes, No,  No,  No,  No,  Yes, Yes, Yes]),
+        Target::ClaudeCode => build_field_matrix(&[
+            Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes,
+            No, No, No, No, No, No, No,
+        ]),
+        Target::OpenCode => build_field_matrix(&[
+            Yes, Yes, Yes, No, Yes, Yes, No, No, No, Yes, No, No, Yes, No, Yes, No, No, No, No, No,
+            No, No, No, No,
+        ]),
+        Target::Codex => build_field_matrix(&[
+            Yes, Yes, Yes, Yes, Yes, Yes, No, No, No, No, Yes, No, Yes, No, No, No, No, No, No,
+            Yes, Yes, No, No, No,
+        ]),
+        Target::Cursor => build_field_matrix(&[
+            Yes, Yes, Yes, Yes, Yes, Yes, No, No, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes, Yes,
+            Yes, No, No, No, No, No,
+        ]),
+        Target::OpenClaw => build_field_matrix(&[
+            Yes, Yes, Yes, No, No, No, No, No, No, No, Yes, No, No, No, No, No, Yes, No, No, No,
+            No, Yes, Yes, Yes,
+        ]),
     }
 }
 
@@ -259,10 +274,20 @@ pub fn capability_matrix(target: Target) -> CapabilityMatrix {
 
     match target {
         //                          skills   commands agents  ag.sub  hooks   h.pre   h.post  h.stop  mcp     instr
-        Target::ClaudeCode => build_matrix(&[Full,    Full,    Full,   Full,   Full,   Full,   Full,   Full,   Full,   Full]),
-        Target::OpenCode   => build_matrix(&[Partial, Partial, Partial,Partial,Partial,Partial,None,   Partial,Full,   Full]),
-        Target::Codex      => build_matrix(&[Full,    Full,    Partial,Partial,Flags,  Flags,  None,   None,   Full,   Full]),
-        Target::Cursor     => build_matrix(&[Partial, Partial, Partial,None,   None,   None,   None,   None,   Full,   Full]),
-        Target::OpenClaw   => build_matrix(&[Partial, Partial, None,   None,   None,   None,   None,   None,   Partial,Full]),
+        Target::ClaudeCode => {
+            build_matrix(&[Full, Full, Full, Full, Full, Full, Full, Full, Full, Full])
+        }
+        Target::OpenCode => build_matrix(&[
+            Partial, Partial, Partial, Partial, Partial, Partial, None, Partial, Full, Full,
+        ]),
+        Target::Codex => build_matrix(&[
+            Full, Full, Partial, Partial, Flags, Flags, None, None, Full, Full,
+        ]),
+        Target::Cursor => build_matrix(&[
+            Partial, Partial, Partial, None, None, None, None, None, Full, Full,
+        ]),
+        Target::OpenClaw => build_matrix(&[
+            Partial, Partial, None, None, None, None, None, None, Partial, Full,
+        ]),
     }
 }

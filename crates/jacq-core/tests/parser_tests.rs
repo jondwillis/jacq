@@ -113,7 +113,8 @@ mod ir_format {
     #[test]
     fn parses_fallbacks() {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
-        let hook_cap = jacq_core::ir::Capability::try_from("hooks.pre-tool-use".to_string()).unwrap();
+        let hook_cap =
+            jacq_core::ir::Capability::try_from("hooks.pre-tool-use".to_string()).unwrap();
         assert!(ir.manifest.fallbacks.contains_key(&hook_cap));
     }
 
@@ -169,7 +170,12 @@ mod ir_format {
         let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
         assert_eq!(ir.instructions.len(), 1);
         assert_eq!(ir.instructions[0].name, "rules");
-        assert!(ir.instructions[0].body.as_raw().contains("Always write tests"));
+        assert!(
+            ir.instructions[0]
+                .body
+                .as_raw()
+                .contains("Always write tests")
+        );
     }
 
     #[test]
@@ -179,7 +185,10 @@ mod ir_format {
         let names: Vec<&str> = ir.shared.iter().map(|f| f.name.as_str()).collect();
         assert!(names.contains(&"common-rules"));
         assert!(names.contains(&"error-handling"));
-        assert!(ir.shared[0].body.as_raw().contains("Common Rules") || ir.shared[1].body.as_raw().contains("Common Rules"));
+        assert!(
+            ir.shared[0].body.as_raw().contains("Common Rules")
+                || ir.shared[1].body.as_raw().contains("Common Rules")
+        );
     }
 
     #[test]
@@ -188,10 +197,7 @@ mod ir_format {
         assert!(ir.target_overrides.contains_key(&Target::OpenCode));
         let opencode_files = &ir.target_overrides[&Target::OpenCode];
         assert_eq!(opencode_files.len(), 1);
-        assert_eq!(
-            opencode_files[0].path.to_str().unwrap(),
-            "custom-tool.ts"
-        );
+        assert_eq!(opencode_files[0].path.to_str().unwrap(), "custom-tool.ts");
         let content = String::from_utf8_lossy(&opencode_files[0].content);
         assert!(content.contains("searchTool"));
     }
@@ -258,12 +264,14 @@ mod real_plugins {
         assert!(notes.is_some(), "should find notes.md command");
 
         let notes = notes.unwrap();
-        assert!(notes
-            .frontmatter
-            .description
-            .as_ref()
-            .unwrap()
-            .contains("Notes.app"));
+        assert!(
+            notes
+                .frontmatter
+                .description
+                .as_ref()
+                .unwrap()
+                .contains("Notes.app")
+        );
         assert!(notes.body.as_raw().contains("AppleScript"));
     }
 }

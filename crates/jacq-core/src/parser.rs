@@ -128,11 +128,10 @@ fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
     let ir_path = dir.join("plugin.yaml");
     if ir_path.exists() {
         let content = read_file(&ir_path)?;
-        let manifest: PluginManifest = serde_yaml::from_str(&content).map_err(|e| {
-            JacqError::ParseError {
+        let manifest: PluginManifest =
+            serde_yaml::from_str(&content).map_err(|e| JacqError::ParseError {
                 reason: format!("{}: {e}", ir_path.display()),
-            }
-        })?;
+            })?;
         return Ok((manifest, ManifestFormat::Ir));
     }
 
@@ -224,7 +223,10 @@ fn sanitize_yaml(yaml: &str) -> String {
 }
 
 /// Try parsing YAML frontmatter, with lenient fallback for malformed values.
-fn parse_yaml_frontmatter<T: serde::de::DeserializeOwned>(yaml: &str, path: &std::path::Path) -> Result<T> {
+fn parse_yaml_frontmatter<T: serde::de::DeserializeOwned>(
+    yaml: &str,
+    path: &std::path::Path,
+) -> Result<T> {
     serde_yaml::from_str(yaml)
         .or_else(|_| {
             let sanitized = sanitize_yaml(yaml);
@@ -354,12 +356,11 @@ fn parse_hook_files(dir: &Path) -> Result<Vec<HookDef>> {
         let content = read_file(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
-        let mut hook: HookDef = serde_yaml::from_str(&content).map_err(|e| {
-            JacqError::InvalidFrontmatter {
+        let mut hook: HookDef =
+            serde_yaml::from_str(&content).map_err(|e| JacqError::InvalidFrontmatter {
                 path: rel_path.clone(),
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
         hook.source_path = rel_path;
         hooks.push(hook);
     }
@@ -386,12 +387,11 @@ fn parse_mcp_files(dir: &Path) -> Result<Vec<McpServerDef>> {
         let content = read_file(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
-        let mut server: McpServerDef = serde_yaml::from_str(&content).map_err(|e| {
-            JacqError::InvalidFrontmatter {
+        let mut server: McpServerDef =
+            serde_yaml::from_str(&content).map_err(|e| JacqError::InvalidFrontmatter {
                 path: rel_path.clone(),
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
         server.source_path = rel_path;
         servers.push(server);
     }

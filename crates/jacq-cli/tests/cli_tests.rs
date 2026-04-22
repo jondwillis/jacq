@@ -90,7 +90,11 @@ mod build {
             ])
             .output()
             .unwrap();
-        assert!(output.status.success(), "build failed: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "build failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         // Should have output directories for declared targets
         assert!(tmp.path().join("claude-code").join("plugin.json").exists());
@@ -104,7 +108,8 @@ mod build {
             .args([
                 "build",
                 fixture("ir-plugin").to_str().unwrap(),
-                "--target", "claude-code",
+                "--target",
+                "claude-code",
                 "-o",
                 tmp.path().to_str().unwrap(),
             ])
@@ -173,7 +178,11 @@ mod init {
             .args(["init", plugin_dir.to_str().unwrap()])
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         assert!(plugin_dir.join("plugin.yaml").exists());
         assert!(plugin_dir.join("skills").join("example.md").exists());
@@ -199,7 +208,11 @@ mod init {
             ])
             .output()
             .unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         assert!(plugin_dir.join("plugin.yaml").exists());
         // init --from preserves the original source layout (commands/ for CC plugins)

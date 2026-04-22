@@ -32,10 +32,7 @@ pub enum JacqError {
         code(jacq::unsupported_capability),
         help("Declare a fallback strategy in plugin.yaml, or remove this target")
     )]
-    UnsupportedCapability {
-        capability: String,
-        target: Target,
-    },
+    UnsupportedCapability { capability: String, target: Target },
 
     #[error("Capability '{capability}' is only partially supported by target '{target}'")]
     #[diagnostic(
@@ -43,10 +40,7 @@ pub enum JacqError {
         severity(warning),
         help("The emitted output may behave differently than on Claude Code")
     )]
-    PartialCapability {
-        capability: String,
-        target: Target,
-    },
+    PartialCapability { capability: String, target: Target },
 
     #[error("Invalid frontmatter in {}: {reason}", path.display())]
     #[diagnostic(code(jacq::invalid_frontmatter))]
@@ -85,22 +79,18 @@ pub enum JacqError {
     #[error("Required variable '{name}' has no value for target '{target}'")]
     #[diagnostic(
         code(jacq::missing_variable_value),
-        help("Add a default value or a target-specific value under 'vars.{name}.targets.{target}:'")
+        help(
+            "Add a default value or a target-specific value under 'vars.{name}.targets.{target}:'"
+        )
     )]
-    MissingVariableValue {
-        name: String,
-        target: Target,
-    },
+    MissingVariableValue { name: String, target: Target },
 
     #[error("Missing shared fragment '{name}' included in {}", path.display())]
     #[diagnostic(
         code(jacq::missing_include),
         help("Create shared/{name}.md or check the include name")
     )]
-    MissingInclude {
-        name: String,
-        path: PathBuf,
-    },
+    MissingInclude { name: String, path: PathBuf },
 }
 
 pub type Result<T> = std::result::Result<T, JacqError>;

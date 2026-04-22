@@ -78,7 +78,10 @@ fallbacks:
         let manifest: PluginManifest = from_yaml(yaml);
 
         assert_eq!(manifest.ir_version, Some("0.1".to_string()));
-        assert_eq!(manifest.targets, vec![Target::ClaudeCode, Target::OpenCode, Target::Codex]);
+        assert_eq!(
+            manifest.targets,
+            vec![Target::ClaudeCode, Target::OpenCode, Target::Codex]
+        );
         assert_eq!(manifest.name, "my-plugin");
 
         let reqs = manifest.requires.expect("requires should be present");
@@ -226,8 +229,14 @@ permissions:
         assert_eq!(reqs.capabilities.len(), 4);
         assert_eq!(reqs.capabilities[0].category, CapabilityCategory::Skills);
         assert_eq!(reqs.capabilities[1].category, CapabilityCategory::Hooks);
-        assert_eq!(reqs.capabilities[1].feature.as_deref(), Some("pre-tool-use"));
-        assert_eq!(reqs.capabilities[2].category, CapabilityCategory::McpServers);
+        assert_eq!(
+            reqs.capabilities[1].feature.as_deref(),
+            Some("pre-tool-use")
+        );
+        assert_eq!(
+            reqs.capabilities[2].category,
+            CapabilityCategory::McpServers
+        );
         assert_eq!(reqs.capabilities[3].feature.as_deref(), Some("subagent"));
 
         assert_eq!(reqs.permissions.len(), 2);
@@ -275,7 +284,10 @@ capabilities:
 permissions: []
 "#;
         let result: Result<Requirements, _> = serde_yaml::from_str(yaml);
-        assert!(result.is_err(), "unknown category should fail deserialization");
+        assert!(
+            result.is_err(),
+            "unknown category should fail deserialization"
+        );
     }
 
     #[test]
@@ -296,13 +308,16 @@ permissions: []
         ];
         caps.sort();
         let names: Vec<String> = caps.into_iter().map(String::from).collect();
-        assert_eq!(names, vec![
-            "agents",
-            "agents.subagent",
-            "hooks.pre-tool-use",
-            "hooks.stop",
-            "skills",
-        ]);
+        assert_eq!(
+            names,
+            vec![
+                "agents",
+                "agents.subagent",
+                "hooks.pre-tool-use",
+                "hooks.stop",
+                "skills",
+            ]
+        );
     }
 }
 
@@ -336,7 +351,10 @@ mod fallback {
     #[test]
     fn typo_in_strategy_fails() {
         let result: Result<FallbackStrategy, _> = serde_yaml::from_str("instuction-based");
-        assert!(result.is_err(), "typo should fail, not become a custom value");
+        assert!(
+            result.is_err(),
+            "typo should fail, not become a custom value"
+        );
     }
 
     #[test]
@@ -554,7 +572,10 @@ allowed-tools: "Bash(osascript:*)"
 color: "#FFD700"
 "##;
         let fm: SkillFrontmatter = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(fm.description.as_deref(), Some("CRUD operations for macOS Notes.app"));
+        assert_eq!(
+            fm.description.as_deref(),
+            Some("CRUD operations for macOS Notes.app")
+        );
         assert!(fm.argument_hint.is_some());
         assert!(fm.allowed_tools.is_some());
         assert_eq!(fm.color.as_deref(), Some("#FFD700"));
@@ -721,9 +742,9 @@ command: my-server
 // ===========================================================================
 
 mod plugin_ir {
+    use jacq_core::ir::*;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
-    use jacq_core::ir::*;
 
     #[test]
     fn construct_minimal_plugin_ir() {
@@ -822,7 +843,10 @@ mod plugin_ir {
         };
 
         let json = serde_json::to_string(&ir).unwrap();
-        assert!(!json.contains("/secret/path"), "source_dir should not appear in serialized output");
+        assert!(
+            !json.contains("/secret/path"),
+            "source_dir should not appear in serialized output"
+        );
 
         // Deserializing back gives empty source_dir
         let parsed: PluginIR = serde_json::from_str(&json).unwrap();
@@ -846,19 +870,25 @@ mod permission {
 - subprocess
 "#;
         let perms: Vec<Permission> = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(perms, vec![
-            Permission::FileRead,
-            Permission::FileWrite,
-            Permission::Network,
-            Permission::Subprocess,
-        ]);
+        assert_eq!(
+            perms,
+            vec![
+                Permission::FileRead,
+                Permission::FileWrite,
+                Permission::Network,
+                Permission::Subprocess,
+            ]
+        );
     }
 
     #[test]
     fn unknown_permission_rejected() {
         let yaml = r#""database-access""#;
         let result: Result<Permission, _> = serde_yaml::from_str(yaml);
-        assert!(result.is_err(), "unknown permission should fail deserialization");
+        assert!(
+            result.is_err(),
+            "unknown permission should fail deserialization"
+        );
     }
 
     #[test]

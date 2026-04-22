@@ -114,19 +114,35 @@ pub struct PluginManifest {
     pub hooks: Option<serde_json::Value>,
 
     /// MCP server configuration — path(s) to JSON files or inline object
-    #[serde(default, rename = "mcpServers", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "mcpServers",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub mcp_servers_config: Option<serde_json::Value>,
 
     /// Output style file/directory paths
-    #[serde(default, rename = "outputStyles", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "outputStyles",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub output_styles: Option<StringOrVec>,
 
     /// LSP server configuration — path(s) to JSON files or inline object
-    #[serde(default, rename = "lspServers", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "lspServers",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub lsp_servers: Option<serde_json::Value>,
 
     /// User-configurable values prompted at plugin enable time
-    #[serde(default, rename = "userConfig", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "userConfig",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub user_config: Option<BTreeMap<String, UserConfigEntry>>,
 
     /// Channel declarations for message injection (Telegram, Slack, etc.)
@@ -135,7 +151,11 @@ pub struct PluginManifest {
 
     // -- Cursor-specific fields --
     /// Human-readable display name (Cursor)
-    #[serde(default, rename = "displayName", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "displayName",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub display_name: Option<String>,
 
     /// Path to plugin logo image (Cursor)
@@ -157,7 +177,11 @@ pub struct PluginManifest {
     pub id: Option<String>,
 
     /// Config JSON Schema for validation (OpenClaw)
-    #[serde(default, rename = "configSchema", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "configSchema",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub config_schema: Option<serde_json::Value>,
 
     /// Provider identifiers this plugin supplies (OpenClaw)
@@ -243,7 +267,11 @@ pub struct Channel {
     /// MCP server name this channel binds to (must match a key in mcpServers)
     pub server: String,
     /// Per-channel user configuration (e.g., bot tokens)
-    #[serde(default, rename = "userConfig", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "userConfig",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub user_config: Option<BTreeMap<String, UserConfigEntry>>,
 }
 
@@ -315,7 +343,7 @@ impl TryFrom<String> for Capability {
                 return Err(format!(
                     "unknown capability category '{cat_str}'. \
                      Valid categories: skills, agents, hooks, mcp-servers, instructions, commands"
-                ))
+                ));
             }
         };
         Ok(Capability { category, feature })
