@@ -141,6 +141,91 @@ mod build {
 }
 
 // ===========================================================================
+// jacq pack
+// ===========================================================================
+
+mod pack {
+    use super::*;
+
+    #[test]
+    fn packs_single_target_archive() {
+        let tmp = TempDir::new().unwrap();
+        let output = jacq()
+            .args([
+                "pack",
+                fixture("ir-plugin").to_str().unwrap(),
+                "--target",
+                "claude-code",
+                "-o",
+                tmp.path().to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "pack failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // Archive exists, has non-trivial size, and matches the expected name.
+        let archive = tmp.path().join("ir-test-plugin-2.0.0-claude-code.tar.gz");
+        assert!(archive.exists(), "archive missing at {}", archive.display());
+        let size = std::fs::metadata(&archive).unwrap().len();
+        assert!(size > 100, "archive suspiciously small: {size} bytes");
+    }
+
+    #[test]
+    fn claude_code_pack_emits_marketplace_json() {
+        let tmp = TempDir::new().unwrap();
+        let output = jacq()
+            .args([
+                "pack",
+                fixture("ir-plugin").to_str().unwrap(),
+                "--target",
+                "claude-code",
+                "-o",
+                tmp.path().to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+
+        let marketplace = tmp.path().join("ir-test-plugin-marketplace.json");
+        assert!(marketplace.exists());
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&marketplace).unwrap()).unwrap();
+        assert_eq!(json["name"], "ir-test-plugin");
+        assert_eq!(json["version"], "2.0.0");
+        assert_eq!(json["archive"], "ir-test-plugin-2.0.0-claude-code.tar.gz");
+    }
+
+    #[test]
+    fn non_claude_targets_skip_marketplace_json() {
+        let tmp = TempDir::new().unwrap();
+        let output = jacq()
+            .args([
+                "pack",
+                fixture("ir-plugin").to_str().unwrap(),
+                "--target",
+                "opencode",
+                "-o",
+                tmp.path().to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+
+        // OpenCode archive present, no marketplace JSON.
+        assert!(
+            tmp.path()
+                .join("ir-test-plugin-2.0.0-opencode.tar.gz")
+                .exists()
+        );
+        assert!(!tmp.path().join("ir-test-plugin-marketplace.json").exists());
+    }
+}
+
+// ===========================================================================
 // jacq inspect
 // ===========================================================================
 

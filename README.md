@@ -36,6 +36,10 @@ jacq build my-plugin --output dist
 
 # Build for a specific target
 jacq build my-plugin --target codex --output dist
+
+# Pack as distributable tar.gz archives (one per target).
+# Claude Code targets also get a marketplace.json snippet alongside.
+jacq pack my-plugin --target claude-code --output dist
 ```
 
 ## Workspace
@@ -76,7 +80,7 @@ Per [Rust Supply Chain Nightmare](https://kerkour.com/rust-supply-chain-nightmar
 - **License allowlist** — `deny.toml` enforces approved licenses only (MIT, Apache-2.0, BSD, ISC, MPL-2.0, a few others)
 - **Registry allowlist** — `deny.toml` blocks git URL and alternate registry dependencies
 - **cargo-audit + cargo-deny in CI** — weekly scheduled runs catch new advisories against unchanged deps
-- **Minimal deps** — 7 direct runtime dependencies (clap, serde, serde_json, serde_yaml, miette, thiserror, walkdir, tera)
+- **Minimal deps** — 9 direct runtime dependencies (clap, serde, serde_json, serde_yaml, miette, thiserror, walkdir, tera, tar+flate2 for `jacq pack`)
 
 Run the full audit locally:
 

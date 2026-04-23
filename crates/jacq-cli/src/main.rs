@@ -4,6 +4,7 @@ use clap::Parser;
 
 use jacq_core::analyzer::{self, Severity};
 use jacq_core::emitter;
+use jacq_core::packer;
 use jacq_core::parser;
 use jacq_core::targets::Target;
 use jacq_core::template;
@@ -24,7 +25,11 @@ fn main() {
         } => cmd_build(&path, target, strict, output.as_deref()),
         cli::Command::Test { path, target, .. } => cmd_validate(&path, target),
         cli::Command::Inspect { path } => cmd_inspect(&path),
-        cli::Command::Pack { .. } => Err("jacq pack is not yet implemented".into()),
+        cli::Command::Pack {
+            path,
+            target,
+            output,
+        } => cmd_pack(&path, target, output.as_deref()),
     };
 
     if let Err(e) = result {
@@ -420,6 +425,60 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
                 diag.target,
                 diag.message
             );
+        }
+    }
+
+    Ok(())
+}
+
+fn cmd_pack(
+    path: &std::path::Path,
+    target: Option<Target>,
+    output: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Pack runs the full build pipeline first, then archives each per-target
+    // output directory. This guarantees the archive contents match exactly
+    // what `jacq build` would produce.
+    let mut ir = parser::parse_plugin(path)?;
+    template::extract_all(&mut ir);
+
+    let template_errors = template::validate(&ir);
+    if !template_errors.is_empty() {
+        for err in &template_errors {
+            eprintln!("  [ERROR] {err}");
+        }
+        return Err(format!("{} template error(s)", template_errors.len()).into());
+    }
+
+    if let Some(t) = target {
+        ir.manifest.targets = vec![t];
+    }
+    if ir.manifest.targets.is_empty() {
+        return Err("no targets declared in plugin manifest. \
+                    Add targets to plugin.yaml or use --target"
+            .into());
+    }
+
+    let report = analyzer::analyze(&ir);
+    if report.errors().count() > 0 {
+        for diag in report.errors() {
+            eprintln!("  [ERROR] [{}] {}", diag.target, diag.message);
+        }
+        return Err("pack failed due to capability errors".into());
+    }
+
+    let output_dir = output.unwrap_or(std::path::Path::new("dist"));
+    std::fs::create_dir_all(output_dir)?;
+
+    emitter::emit(&ir, output_dir)?;
+
+    for t in &ir.manifest.targets {
+        let target_dir = output_dir.join(t.as_str());
+        let archive = packer::pack(*t, &ir.manifest, &target_dir, output_dir)?;
+        println!("  Packed: {}", archive.display());
+        if matches!(t, Target::ClaudeCode) {
+            let marketplace = output_dir.join(format!("{}-marketplace.json", ir.manifest.name));
+            println!("  Marketplace entry: {}", marketplace.display());
         }
     }
 

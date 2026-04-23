@@ -85,13 +85,18 @@ pub enum Command {
         path: PathBuf,
     },
 
-    /// Package plugin for distribution
+    /// Package plugin for distribution as tar.gz archives (one per target).
+    /// Claude Code targets also get a marketplace.json snippet alongside.
     Pack {
         /// Plugin directory (defaults to current directory)
         #[arg(default_value = ".")]
         path: PathBuf,
 
-        /// Output directory
+        /// Pack a specific target only
+        #[arg(long)]
+        target: Option<Target>,
+
+        /// Output directory (defaults to ./dist)
         #[arg(short, long)]
         output: Option<PathBuf>,
     },

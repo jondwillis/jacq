@@ -36,6 +36,11 @@ walkdir = "2.5"
 # Templating
 tera = "1.20"
 
+# Packaging — tar.gz archives for `jacq pack`. Pure-Rust deflate via
+# miniz_oxide keeps us away from C zlib bindings.
+tar = "0.4"
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
+
 # Internal crates
 jacq-core = { path = "crates/jacq-core", version = "0.1.0" }
 
