@@ -222,6 +222,7 @@ fn find_manifest_path(plugin_dir: &Path, target: Target) -> Option<PathBuf> {
 /// Find the emitted manifest path for a target.
 fn emitted_manifest_path(emitted_dir: &Path, target: Target) -> PathBuf {
     match target {
+        Target::ClaudeCode => emitted_dir.join(".claude-plugin/plugin.json"),
         Target::Cursor => emitted_dir.join(".cursor-plugin/plugin.json"),
         Target::OpenClaw => emitted_dir.join("openclaw.plugin.json"),
         _ => emitted_dir.join("plugin.json"),

@@ -152,8 +152,15 @@ fn build_manifest_json(manifest: &PluginManifest, target: Target) -> serde_json:
 // ---------------------------------------------------------------------------
 
 fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
+    // Claude Code's loader looks for the manifest at `.claude-plugin/plugin.json`
+    // (not at the directory root). `claude plugin validate <dir>` rejects any
+    // layout with the manifest at the root with "No manifest found in
+    // directory. Expected .claude-plugin/marketplace.json or
+    // .claude-plugin/plugin.json".
+    let claude_plugin_dir = dir.join(".claude-plugin");
+    create_dir(&claude_plugin_dir)?;
     let plugin_json = build_manifest_json(&ir.manifest, Target::ClaudeCode);
-    write_json(dir, "plugin.json", &plugin_json)?;
+    write_json(&claude_plugin_dir, "plugin.json", &plugin_json)?;
 
     // commands/*.md — skills with frontmatter
     if !ir.skills.is_empty() {

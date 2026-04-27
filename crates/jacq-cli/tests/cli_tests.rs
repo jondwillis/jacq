@@ -97,7 +97,11 @@ mod build {
         );
 
         // Should have output directories for declared targets
-        assert!(tmp.path().join("claude-code").join("plugin.json").exists());
+        assert!(tmp.path()
+            .join("claude-code")
+            .join(".claude-plugin")
+            .join("plugin.json")
+            .exists());
         assert!(tmp.path().join("opencode").join("package.json").exists());
     }
 
@@ -117,7 +121,11 @@ mod build {
             .unwrap();
         assert!(output.status.success());
 
-        assert!(tmp.path().join("claude-code").join("plugin.json").exists());
+        assert!(tmp.path()
+            .join("claude-code")
+            .join(".claude-plugin")
+            .join("plugin.json")
+            .exists());
         assert!(!tmp.path().join("opencode").exists());
     }
 
@@ -183,7 +191,11 @@ mod build {
             "build should print an inference note. stderr: {stderr}"
         );
         // The original bug case — claude-code must always be present
-        assert!(tmp.path().join("claude-code").join("plugin.json").exists());
+        assert!(tmp.path()
+            .join("claude-code")
+            .join(".claude-plugin")
+            .join("plugin.json")
+            .exists());
         // The expanded behavior — every compatible target gets a dist subdir
         for target in ["opencode", "codex", "cursor", "openclaw"] {
             assert!(

@@ -189,7 +189,9 @@ mod claude_code {
         let ir = build_ir(vec![Target::ClaudeCode]);
         let (_tmp, out) = emit_claude_code(&ir);
 
-        let content = read_file(&out, "plugin.json");
+        // Claude Code requires the manifest under `.claude-plugin/plugin.json`
+        // (see `claude plugin validate <dir>` failure mode), not at root.
+        let content = read_file(&out, ".claude-plugin/plugin.json");
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(parsed["name"], "test-plugin");
@@ -443,7 +445,7 @@ mod integration {
         emit(&ir, tmp.path()).unwrap();
 
         // Should have output for both declared targets
-        assert!(file_exists(tmp.path(), "claude-code/plugin.json"));
+        assert!(file_exists(tmp.path(), "claude-code/.claude-plugin/plugin.json"));
         assert!(file_exists(tmp.path(), "opencode/package.json"));
     }
 }
