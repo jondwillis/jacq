@@ -374,6 +374,9 @@ fn render_skill_md(skill: &SkillDef, engine: &RenderEngine) -> Result<String> {
     if let Some(v) = &fm.description {
         out.insert("description", yaml_value(v)?);
     }
+    if let Some(v) = &fm.paths {
+        out.insert("paths", yaml_value(v)?);
+    }
     if let Some(v) = &fm.argument_hint {
         out.insert("argument-hint", yaml_value(v)?);
     }

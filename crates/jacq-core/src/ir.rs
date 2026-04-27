@@ -469,6 +469,10 @@ pub struct SkillFrontmatter {
     #[serde(default)]
     pub tools: Option<StringOrVec>,
 
+    /// File paths/globs that trigger auto-loading of this skill
+    #[serde(default)]
+    pub paths: Option<StringOrVec>,
+
     #[serde(default)]
     pub color: Option<String>,
 
