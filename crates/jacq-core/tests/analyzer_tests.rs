@@ -478,10 +478,25 @@ mod integration {
     }
 
     #[test]
-    fn analyze_claude_code_native_no_targets() {
+    fn analyze_claude_code_native_inferred_targets() {
+        // Native CC plugin has no `targets:` field in plugin.json, but the
+        // parser's compatibility probe expands to every target the plugin can
+        // build for without errors. Analysis then runs against that inferred
+        // set — every target in the report should be capability-compatible
+        // (zero errors), though some may have warnings from Partial support.
         let ir = parse_plugin(&fixture("claude-code-plugin")).unwrap();
+        assert!(
+            !ir.manifest.targets.is_empty(),
+            "compatibility probe should populate targets for native CC plugin"
+        );
+        assert!(ir.targets_inferred);
+
         let report = analyze(&ir);
-        // No targets declared → nothing to analyze
-        assert!(report.diagnostics.is_empty());
+        for (target, summary) in &report.target_summaries {
+            assert_eq!(
+                summary.error_count, 0,
+                "{target} should not have errors — probe filters them out"
+            );
+        }
     }
 }

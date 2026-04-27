@@ -278,7 +278,7 @@ fn cmd_build(
     if ir.targets_inferred && target.is_none() {
         let names: Vec<&str> = ir.manifest.targets.iter().map(|t| t.as_str()).collect();
         eprintln!(
-            "  note: inferred targets [{}] from manifest layout — \
+            "  note: inferred targets [{}] from compatibility probe — \
              declare `targets:` in plugin.yaml to override",
             names.join(", ")
         );
@@ -377,7 +377,7 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
     }
 
     let provenance = if ir.targets_inferred {
-        " (inferred from manifest layout)"
+        " (inferred from compatibility probe)"
     } else {
         ""
     };
@@ -478,7 +478,7 @@ fn cmd_pack(
     if ir.targets_inferred && target.is_none() {
         let names: Vec<&str> = ir.manifest.targets.iter().map(|t| t.as_str()).collect();
         eprintln!(
-            "  note: inferred targets [{}] from manifest layout — \
+            "  note: inferred targets [{}] from compatibility probe — \
              declare `targets:` in plugin.yaml to override",
             names.join(", ")
         );

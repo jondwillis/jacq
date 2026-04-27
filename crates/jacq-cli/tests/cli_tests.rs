@@ -158,8 +158,10 @@ mod build {
     #[test]
     fn native_claude_plugin_infers_target() {
         // The bug-report behavior: a native CC plugin with no `targets:` field
-        // used to fail. Now the parser infers `[claude-code]` from the
-        // .claude-plugin/plugin.json layout, and build succeeds.
+        // used to fail. Now the parser runs a compatibility probe and emits
+        // for every target the plugin can build for without errors. The
+        // skills-only fixture is universally compatible, so all five dist
+        // subdirs should appear.
         let tmp = TempDir::new().unwrap();
         let output = jacq()
             .args([
@@ -180,7 +182,15 @@ mod build {
             stderr.contains("inferred targets"),
             "build should print an inference note. stderr: {stderr}"
         );
+        // The original bug case — claude-code must always be present
         assert!(tmp.path().join("claude-code").join("plugin.json").exists());
+        // The expanded behavior — every compatible target gets a dist subdir
+        for target in ["opencode", "codex", "cursor", "openclaw"] {
+            assert!(
+                tmp.path().join(target).exists(),
+                "expected dist/{target}/ for skills-only plugin (universally compatible)"
+            );
+        }
     }
 }
 

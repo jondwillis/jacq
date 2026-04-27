@@ -62,11 +62,21 @@ mod claude_code_native {
         let ir = parse_plugin(&fixture("claude-code-plugin")).unwrap();
         assert!(ir.manifest.ir_version.is_none());
         assert!(ir.manifest.requires.is_none());
-        // Targets are inferred from the .claude-plugin/plugin.json layout
-        // when the manifest doesn't declare them. The provenance flag
-        // distinguishes this from an explicit declaration.
-        assert_eq!(ir.manifest.targets, vec![Target::ClaudeCode]);
+        // Native CC plugins get targets via compatibility probe — every target
+        // the plugin can build for without errors gets included. The fixture
+        // is skills-only and every target supports skills (at least Partial),
+        // so all five end up in the inferred set.
         assert!(ir.targets_inferred);
+        assert!(
+            ir.manifest.targets.contains(&Target::ClaudeCode),
+            "the manifest's own format must always be in the inferred set"
+        );
+        assert_eq!(
+            ir.manifest.targets.len(),
+            5,
+            "skills-only plugin is universally compatible: {:?}",
+            ir.manifest.targets
+        );
     }
 
     #[test]

@@ -30,23 +30,7 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         source: e,
     })?;
 
-    let (mut manifest, manifest_format) = parse_manifest(&dir)?;
-
-    // Format-based target inference: if the manifest doesn't declare targets,
-    // fall back to whatever the detected manifest layout implies. Per-target
-    // native formats (.claude-plugin/, .cursor-plugin/, etc.) carry the signal
-    // unambiguously — see `infer_default_targets` for the policy table.
-    let targets_inferred = if manifest.targets.is_empty() {
-        let inferred = infer_default_targets(manifest_format);
-        if !inferred.is_empty() {
-            manifest.targets = inferred;
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let (manifest, manifest_format) = parse_manifest(&dir)?;
 
     let skills = parse_md_files(&dir, "skills", &manifest_format)?;
     let commands = parse_md_files(&dir, "commands", &manifest_format)?;
@@ -57,12 +41,13 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
     let mcp_servers = parse_mcp_files(&dir)?;
     let instructions = parse_instruction_files(&dir)?;
     let shared = parse_shared_files(&dir)?;
-    let target_overrides = parse_target_overrides(&dir, &manifest)?;
-
     let output_styles = parse_output_style_files(&dir)?;
     let lsp_servers = parse_lsp_files(&dir)?;
 
-    Ok(PluginIR {
+    // Build a partial IR so we can run the compatibility probe before deciding
+    // which target_overrides to materialize. target_overrides depends on the
+    // chosen target list, so it has to come after inference.
+    let mut ir = PluginIR {
         manifest,
         skills: all_skills,
         agents,
@@ -72,10 +57,27 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         output_styles,
         lsp_servers,
         shared,
-        target_overrides,
-        source_dir: dir,
-        targets_inferred,
-    })
+        target_overrides: BTreeMap::new(),
+        source_dir: dir.clone(),
+        targets_inferred: false,
+    };
+
+    // Compatibility probe: when a native manifest doesn't declare `targets:`,
+    // probe every known target and include any one the plugin can build for
+    // without errors. IR-format manifests (plugin.yaml) are exempt — there,
+    // an empty `targets:` is a real signal ("not decided yet"), not absence
+    // of a place to declare them.
+    if ir.manifest.targets.is_empty() && manifest_format != ManifestFormat::Ir {
+        let inferred = crate::analyzer::compatible_targets(&ir);
+        if !inferred.is_empty() {
+            ir.manifest.targets = inferred;
+            ir.targets_inferred = true;
+        }
+    }
+
+    ir.target_overrides = parse_target_overrides(&dir, &ir.manifest)?;
+
+    Ok(ir)
 }
 
 // ---------------------------------------------------------------------------
@@ -202,30 +204,6 @@ fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
     Err(JacqError::NoManifest {
         path: dir.to_path_buf(),
     })
-}
-
-/// Format-based default targets — applied when a manifest doesn't declare
-/// `targets:` itself.
-///
-/// **Policy table** (see vendor survey in CLAUDE.md / commit history):
-/// - `.claude-plugin/plugin.json`  → `[ClaudeCode]` (universal in CC ecosystem)
-/// - `.cursor-plugin/plugin.json`  → `[Cursor]`     (Cursor template convention)
-/// - `.codex-plugin/plugin.json`   → `[Codex]`      (no real-world repo uses
-///   this yet, but the layout itself signals intent — forward-compat)
-/// - `openclaw.plugin.json`        → `[OpenClaw]`   (universal in OpenClaw)
-/// - root `plugin.json`            → `[ClaudeCode]` (legacy CC layout, the
-///   only target that has historically used a bare manifest)
-/// - `plugin.yaml` (IR)            → `[]` (empty — IR manifests are expected
-///   to be explicit; not declaring targets is a real signal, not a default)
-fn infer_default_targets(format: ManifestFormat) -> Vec<Target> {
-    match format {
-        ManifestFormat::Ir => vec![],
-        ManifestFormat::ClaudeCodeNative => vec![Target::ClaudeCode],
-        ManifestFormat::CursorNative => vec![Target::Cursor],
-        ManifestFormat::CodexNative => vec![Target::Codex],
-        ManifestFormat::OpenClawNative => vec![Target::OpenClaw],
-        ManifestFormat::RootPluginJson => vec![Target::ClaudeCode],
-    }
 }
 
 fn parse_json_manifest(path: &Path) -> Result<PluginManifest> {

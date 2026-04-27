@@ -10,14 +10,44 @@ use crate::ir::*;
 use crate::targets::{SupportLevel, Target, capability_matrix};
 
 // ---------------------------------------------------------------------------
+// Compatibility probe
+// ---------------------------------------------------------------------------
+
+/// Probe every known target and return those the plugin can build for without
+/// errors. Warnings are tolerated — `Partial`/`Flags` capability support
+/// produces a warning but the build still succeeds, which matches what a user
+/// means by "where can this plugin work?"
+///
+/// Used by `parse_plugin` to expand undeclared targets in native manifests.
+pub fn compatible_targets(ir: &PluginIR) -> Vec<Target> {
+    let report = analyze_against(ir, Target::all());
+    report
+        .target_summaries
+        .iter()
+        .filter(|(_, summary)| summary.compatible())
+        .map(|(t, _)| *t)
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /// Analyze a plugin IR against its declared targets.
 pub fn analyze(ir: &PluginIR) -> AnalysisReport {
+    analyze_against(ir, &ir.manifest.targets)
+}
+
+/// Analyze a plugin IR against an explicit target list.
+///
+/// `analyze` is the normal entry point — it uses whatever targets the manifest
+/// declared. This variant exists so the parser's compatibility probe can ask
+/// "which of all five targets would this plugin work on?" without having to
+/// mutate the IR's target list first.
+pub fn analyze_against(ir: &PluginIR, targets: &[Target]) -> AnalysisReport {
     let inferred = infer_capabilities(ir);
 
-    if ir.manifest.targets.is_empty() {
+    if targets.is_empty() {
         return AnalysisReport {
             inferred_capabilities: inferred,
             diagnostics: vec![],
@@ -28,7 +58,7 @@ pub fn analyze(ir: &PluginIR) -> AnalysisReport {
     let mut diagnostics = Vec::new();
     let mut summaries = BTreeMap::new();
 
-    for target in &ir.manifest.targets {
+    for target in targets {
         let matrix = capability_matrix(*target);
         let mut error_count = 0;
         let mut warning_count = 0;
