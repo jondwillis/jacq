@@ -120,7 +120,11 @@ fn claude_code_validates() {
 // Codex's loader (vendor/codex/codex-rs/core-skills/src/loader.rs) walks
 // `$CODEX_HOME/skills/<name>/SKILL.md` — one directory per skill, the file
 // itself always called SKILL.md. Verify the emitter produces that shape for
-// each parsed skill.
+// every parsed skill, with no extras and no clobbering.
+//
+// We deliberately skip a runtime probe of the codex binary: skill loading
+// only fires when a real session starts, which requires API auth + network.
+// This filesystem check is the strongest signal we can give offline.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -138,7 +142,9 @@ fn codex_skill_layout_is_correct() {
 
     // The fixture has commands/greet.md and commands/farewell.md, which jacq
     // treats as skills (Claude Code's commands and skills share an IR type).
-    for skill_name in ["greet", "farewell"] {
+    let expected: &[&str] = &["greet", "farewell"];
+
+    for skill_name in expected {
         let skill_md = skills_dir.join(skill_name).join("SKILL.md");
         assert!(
             skill_md.exists(),
@@ -147,45 +153,25 @@ fn codex_skill_layout_is_correct() {
             skill_md.display()
         );
     }
-}
 
-// ---------------------------------------------------------------------------
-// codex runtime probe: place the emitted skills under a temp $CODEX_HOME
-// and verify the binary doesn't log SkillError on startup.
-// ---------------------------------------------------------------------------
-
-const CODEX_APP_BINARY: &str = "/Applications/Codex.app/Contents/Resources/codex";
-
-#[test]
-#[ignore]
-fn codex_runtime_loads_skills_without_errors() {
-    if !PathBuf::from(CODEX_APP_BINARY).exists() {
-        eprintln!("SKIP: Codex.app not installed at {CODEX_APP_BINARY}");
-        return;
-    }
-    let dist = build_fixture_to_temp();
-    let codex_home = TempDir::new().expect("create CODEX_HOME tempdir");
-
-    let dist_skills = dist.path().join("codex").join("skills");
-    let target_skills = codex_home.path().join("skills");
-    if dist_skills.exists() {
-        copy_dir_recursive(&dist_skills, &target_skills);
-    }
-
-    // `--help` doesn't start a session, but it does initialize enough of the
-    // process for the skill loader to report errors via the `error!` macro
-    // (loader.rs:400). If a future codex version moves loading later, this
-    // test may need a different invocation that triggers session startup.
-    let output = Command::new(CODEX_APP_BINARY)
-        .env("CODEX_HOME", codex_home.path())
-        .arg("--help")
-        .output()
-        .expect("codex failed to spawn");
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !stderr.contains("SkillError") && !stderr.contains("failed to read skills"),
-        "codex reported skill-load errors against jacq-emitted output:\n{stderr}"
+    // Count every entry under skills/ — catches the SKILL.md collision bug
+    // (multiple skills clobbering each other into a single file) and any
+    // stray files the emitter shouldn't have written.
+    let actual: Vec<String> = std::fs::read_dir(&skills_dir)
+        .expect("read skills/")
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let mut actual_sorted = actual.clone();
+    actual_sorted.sort();
+    let mut expected_sorted: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+    expected_sorted.sort();
+    assert_eq!(
+        actual_sorted, expected_sorted,
+        "codex skills/ contents don't match the source fixture's skill list. \
+         Likely cause: skill-name parsing collapses every directory-style \
+         skill to the literal `SKILL` (parser reads the file stem of \
+         `SKILL.md` instead of the parent directory name)."
     );
 }
 
@@ -223,9 +209,35 @@ fn cursor_validates_via_marketplace_script() {
     let dist = build_fixture_to_temp();
     let cursor_dir = dist.path().join("cursor");
 
+    // Stage a synthetic marketplace wrapping jacq's single emitted plugin.
+    // The validator (validate-template.mjs:251) reads
+    // `<cwd>/.cursor-plugin/marketplace.json` and walks each entry's `source`
+    // path under `metadata.pluginRoot`, then validates each plugin's own
+    // `.cursor-plugin/plugin.json`. The plugin name in the marketplace entry
+    // must match the per-plugin manifest's name (validator:331-335).
     let staging = TempDir::new().expect("create marketplace staging tempdir");
-    let plugin_slot = staging.path().join("plugins").join("test-plugin");
+    let plugin_name = "test-plugin"; // matches the fixture's manifest name
+    let plugin_slot = staging.path().join("plugins").join(plugin_name);
     copy_dir_recursive(&cursor_dir, &plugin_slot);
+
+    let marketplace_dir = staging.path().join(".cursor-plugin");
+    std::fs::create_dir_all(&marketplace_dir).expect("mkdir .cursor-plugin");
+    let marketplace_json = format!(
+        r#"{{
+  "name": "jacq-conformance-marketplace",
+  "owner": {{ "name": "jacq", "email": "noreply@example.com" }},
+  "metadata": {{
+    "description": "Synthetic marketplace for cursor conformance testing",
+    "version": "0.1.0",
+    "pluginRoot": "plugins"
+  }},
+  "plugins": [
+    {{ "name": "{plugin_name}", "source": "{plugin_name}", "description": "fixture under test" }}
+  ]
+}}"#
+    );
+    std::fs::write(marketplace_dir.join("marketplace.json"), marketplace_json)
+        .expect("write marketplace.json");
 
     let output = Command::new("node")
         .arg(&validator)
