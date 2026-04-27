@@ -273,6 +273,17 @@ fn cmd_build(
         );
     }
 
+    // If we filled targets via parser inference (and the user didn't override
+    // with --target), surface that decision so it's not invisible.
+    if ir.targets_inferred && target.is_none() {
+        let names: Vec<&str> = ir.manifest.targets.iter().map(|t| t.as_str()).collect();
+        eprintln!(
+            "  note: inferred targets [{}] from manifest layout — \
+             declare `targets:` in plugin.yaml to override",
+            names.join(", ")
+        );
+    }
+
     let report = analyzer::analyze(&ir);
     let has_errors = report.errors().count() > 0;
 
@@ -365,8 +376,13 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
         return Ok(());
     }
 
+    let provenance = if ir.targets_inferred {
+        " (inferred from manifest layout)"
+    } else {
+        ""
+    };
     println!(
-        "\nTargets: {}",
+        "\nTargets: {}{provenance}",
         ir.manifest
             .targets
             .iter()
@@ -457,6 +473,15 @@ fn cmd_pack(
         return Err("no targets declared in plugin manifest. \
                     Add targets to plugin.yaml or use --target"
             .into());
+    }
+
+    if ir.targets_inferred && target.is_none() {
+        let names: Vec<&str> = ir.manifest.targets.iter().map(|t| t.as_str()).collect();
+        eprintln!(
+            "  note: inferred targets [{}] from manifest layout — \
+             declare `targets:` in plugin.yaml to override",
+            names.join(", ")
+        );
     }
 
     let report = analyzer::analyze(&ir);

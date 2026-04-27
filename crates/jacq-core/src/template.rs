@@ -466,6 +466,7 @@ mod tests {
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: std::path::PathBuf::new(),
+            targets_inferred: false,
         };
         extract_all(&mut ir);
         let errors = validate(&ir);
@@ -521,6 +522,7 @@ mod tests {
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: std::path::PathBuf::new(),
+            targets_inferred: false,
         };
         extract_all(&mut ir);
         let errors = validate(&ir);
@@ -585,6 +587,7 @@ mod tests {
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: std::path::PathBuf::new(),
+            targets_inferred: false,
         };
         let errors = validate(&ir);
         assert_eq!(errors.len(), 1);
@@ -720,6 +723,7 @@ mod tests {
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: std::path::PathBuf::new(),
+            targets_inferred: false,
         };
         let errors = validate(&ir);
         assert_eq!(errors.len(), 1);
@@ -781,6 +785,7 @@ mod tests {
             }],
             target_overrides: BTreeMap::new(),
             source_dir: std::path::PathBuf::new(),
+            targets_inferred: false,
         };
         let errors = validate(&ir);
         assert!(errors.is_empty(), "valid include should pass: {errors:?}");
@@ -834,6 +839,7 @@ mod tests {
             }],
             target_overrides: BTreeMap::new(),
             source_dir: std::path::PathBuf::new(),
+            targets_inferred: false,
         };
         extract_all(&mut ir);
         assert!(ir.shared[0].body.has_variables());

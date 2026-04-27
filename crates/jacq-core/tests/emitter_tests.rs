@@ -140,6 +140,7 @@ fn build_ir(targets: Vec<Target>) -> PluginIR {
         shared: vec![],
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),
+        targets_inferred: false,
     }
 }
 

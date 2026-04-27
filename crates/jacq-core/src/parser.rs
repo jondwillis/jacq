@@ -30,7 +30,23 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         source: e,
     })?;
 
-    let (manifest, manifest_format) = parse_manifest(&dir)?;
+    let (mut manifest, manifest_format) = parse_manifest(&dir)?;
+
+    // Format-based target inference: if the manifest doesn't declare targets,
+    // fall back to whatever the detected manifest layout implies. Per-target
+    // native formats (.claude-plugin/, .cursor-plugin/, etc.) carry the signal
+    // unambiguously — see `infer_default_targets` for the policy table.
+    let targets_inferred = if manifest.targets.is_empty() {
+        let inferred = infer_default_targets(manifest_format);
+        if !inferred.is_empty() {
+            manifest.targets = inferred;
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
 
     let skills = parse_md_files(&dir, "skills", &manifest_format)?;
     let commands = parse_md_files(&dir, "commands", &manifest_format)?;
@@ -58,6 +74,7 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         shared,
         target_overrides,
         source_dir: dir,
+        targets_inferred,
     })
 }
 
@@ -65,12 +82,27 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
 // Format detection
 // ---------------------------------------------------------------------------
 
+/// Where the manifest came from on disk.
+///
+/// Each per-target native format gets its own variant so we can infer the
+/// implied target list when the manifest doesn't declare `targets:` itself.
+/// Previously `.cursor-plugin/`, `.codex-plugin/`, `openclaw.plugin.json`, and
+/// bare `plugin.json` all collapsed to `ClaudeCode`, which threw away the one
+/// signal we need for inference.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum ManifestFormat {
-    /// plugin.yaml at root (IR format)
+    /// plugin.yaml at root (jacq IR format)
     Ir,
-    /// .claude-plugin/plugin.json or plugin.json (Claude Code native)
-    ClaudeCode,
+    /// .claude-plugin/plugin.json
+    ClaudeCodeNative,
+    /// .cursor-plugin/plugin.json
+    CursorNative,
+    /// .codex-plugin/plugin.json
+    CodexNative,
+    /// openclaw.plugin.json at root
+    OpenClawNative,
+    /// bare plugin.json at root — no per-target subdirectory
+    RootPluginJson,
 }
 
 // ---------------------------------------------------------------------------
@@ -139,36 +171,61 @@ fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
     // Try Claude Code format: .claude-plugin/plugin.json
     let cc_path = dir.join(".claude-plugin").join("plugin.json");
     if cc_path.exists() {
-        return parse_json_manifest(&cc_path).map(|m| (m, ManifestFormat::ClaudeCode));
+        return parse_json_manifest(&cc_path).map(|m| (m, ManifestFormat::ClaudeCodeNative));
     }
 
     // Try Cursor format: .cursor-plugin/plugin.json
     let cursor_path = dir.join(".cursor-plugin").join("plugin.json");
     if cursor_path.exists() {
-        return parse_json_manifest(&cursor_path).map(|m| (m, ManifestFormat::ClaudeCode));
+        return parse_json_manifest(&cursor_path).map(|m| (m, ManifestFormat::CursorNative));
     }
 
     // Try Codex format: .codex-plugin/plugin.json
     let codex_path = dir.join(".codex-plugin").join("plugin.json");
     if codex_path.exists() {
-        return parse_json_manifest(&codex_path).map(|m| (m, ManifestFormat::ClaudeCode));
+        return parse_json_manifest(&codex_path).map(|m| (m, ManifestFormat::CodexNative));
     }
 
     // Try OpenClaw format: openclaw.plugin.json
     let openclaw_path = dir.join("openclaw.plugin.json");
     if openclaw_path.exists() {
-        return parse_json_manifest(&openclaw_path).map(|m| (m, ManifestFormat::ClaudeCode));
+        return parse_json_manifest(&openclaw_path).map(|m| (m, ManifestFormat::OpenClawNative));
     }
 
-    // Try root plugin.json
+    // Try root plugin.json — no per-target subdirectory hint, but historically
+    // Claude Code plugins lived here before the .claude-plugin/ standard.
     let root_json = dir.join("plugin.json");
     if root_json.exists() {
-        return parse_json_manifest(&root_json).map(|m| (m, ManifestFormat::ClaudeCode));
+        return parse_json_manifest(&root_json).map(|m| (m, ManifestFormat::RootPluginJson));
     }
 
     Err(JacqError::NoManifest {
         path: dir.to_path_buf(),
     })
+}
+
+/// Format-based default targets — applied when a manifest doesn't declare
+/// `targets:` itself.
+///
+/// **Policy table** (see vendor survey in CLAUDE.md / commit history):
+/// - `.claude-plugin/plugin.json`  → `[ClaudeCode]` (universal in CC ecosystem)
+/// - `.cursor-plugin/plugin.json`  → `[Cursor]`     (Cursor template convention)
+/// - `.codex-plugin/plugin.json`   → `[Codex]`      (no real-world repo uses
+///   this yet, but the layout itself signals intent — forward-compat)
+/// - `openclaw.plugin.json`        → `[OpenClaw]`   (universal in OpenClaw)
+/// - root `plugin.json`            → `[ClaudeCode]` (legacy CC layout, the
+///   only target that has historically used a bare manifest)
+/// - `plugin.yaml` (IR)            → `[]` (empty — IR manifests are expected
+///   to be explicit; not declaring targets is a real signal, not a default)
+fn infer_default_targets(format: ManifestFormat) -> Vec<Target> {
+    match format {
+        ManifestFormat::Ir => vec![],
+        ManifestFormat::ClaudeCodeNative => vec![Target::ClaudeCode],
+        ManifestFormat::CursorNative => vec![Target::Cursor],
+        ManifestFormat::CodexNative => vec![Target::Codex],
+        ManifestFormat::OpenClawNative => vec![Target::OpenClaw],
+        ManifestFormat::RootPluginJson => vec![Target::ClaudeCode],
+    }
 }
 
 fn parse_json_manifest(path: &Path) -> Result<PluginManifest> {

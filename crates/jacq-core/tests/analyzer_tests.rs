@@ -61,6 +61,7 @@ fn empty_ir(manifest: PluginManifest) -> PluginIR {
         shared: vec![],
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),
+        targets_inferred: false,
     }
 }
 

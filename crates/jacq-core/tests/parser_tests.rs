@@ -61,8 +61,21 @@ mod claude_code_native {
     fn ir_fields_default_for_native_plugin() {
         let ir = parse_plugin(&fixture("claude-code-plugin")).unwrap();
         assert!(ir.manifest.ir_version.is_none());
-        assert!(ir.manifest.targets.is_empty());
         assert!(ir.manifest.requires.is_none());
+        // Targets are inferred from the .claude-plugin/plugin.json layout
+        // when the manifest doesn't declare them. The provenance flag
+        // distinguishes this from an explicit declaration.
+        assert_eq!(ir.manifest.targets, vec![Target::ClaudeCode]);
+        assert!(ir.targets_inferred);
+    }
+
+    #[test]
+    fn explicit_targets_in_ir_format_skip_inference() {
+        let ir = parse_plugin(&fixture("ir-plugin")).unwrap();
+        assert!(
+            !ir.targets_inferred,
+            "IR manifests with explicit `targets:` must not be marked inferred"
+        );
     }
 
     #[test]

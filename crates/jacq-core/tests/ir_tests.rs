@@ -790,6 +790,7 @@ mod plugin_ir {
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: PathBuf::from("/tmp/test"),
+            targets_inferred: false,
         };
 
         assert_eq!(ir.manifest.name, "test");
@@ -840,6 +841,7 @@ mod plugin_ir {
             shared: vec![],
             target_overrides: BTreeMap::new(),
             source_dir: PathBuf::from("/secret/path"),
+            targets_inferred: false,
         };
 
         let json = serde_json::to_string(&ir).unwrap();

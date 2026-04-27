@@ -122,7 +122,44 @@ mod build {
     }
 
     #[test]
-    fn no_targets_fails() {
+    fn no_targets_fails_for_ir_without_inference() {
+        // IR-format manifests are explicit by contract — if the user wrote
+        // plugin.yaml and omitted `targets:`, that's a real declaration of
+        // "I haven't decided yet," not a layout signal we should infer from.
+        // Native formats (.claude-plugin/, .cursor-plugin/, etc.) infer their
+        // target from the manifest path; only IR can hit this error path.
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("ir-no-targets");
+        std::fs::create_dir(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("plugin.yaml"),
+            "ir_version: \"0.1\"\nname: ir-no-targets\nversion: \"0.1.0\"\n",
+        )
+        .unwrap();
+
+        let out_dir = tmp.path().join("dist");
+        let output = jacq()
+            .args([
+                "build",
+                plugin_dir.to_str().unwrap(),
+                "-o",
+                out_dir.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("no targets"),
+            "expected 'no targets' in stderr, got: {stderr}"
+        );
+    }
+
+    #[test]
+    fn native_claude_plugin_infers_target() {
+        // The bug-report behavior: a native CC plugin with no `targets:` field
+        // used to fail. Now the parser infers `[claude-code]` from the
+        // .claude-plugin/plugin.json layout, and build succeeds.
         let tmp = TempDir::new().unwrap();
         let output = jacq()
             .args([
@@ -133,10 +170,17 @@ mod build {
             ])
             .output()
             .unwrap();
-        // Claude Code native plugin has no targets declared
-        assert!(!output.status.success());
+        assert!(
+            output.status.success(),
+            "build should succeed via target inference. stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("no targets"));
+        assert!(
+            stderr.contains("inferred targets"),
+            "build should print an inference note. stderr: {stderr}"
+        );
+        assert!(tmp.path().join("claude-code").join("plugin.json").exists());
     }
 }
 

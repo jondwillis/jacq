@@ -51,6 +51,12 @@ pub struct PluginIR {
     /// Root directory this plugin was loaded from
     #[serde(skip)]
     pub source_dir: PathBuf,
+
+    /// True when `manifest.targets` was populated by parser inference rather
+    /// than declared explicitly in the manifest. Lets `inspect`/`build`/`pack`
+    /// surface that decision instead of pretending the user wrote it.
+    #[serde(skip)]
+    pub targets_inferred: bool,
 }
 
 // ---------------------------------------------------------------------------
