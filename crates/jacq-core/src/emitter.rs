@@ -231,6 +231,28 @@ fn emit_opencode(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()>
     let package_json = build_manifest_json(&ir.manifest, Target::OpenCode);
     write_json(dir, "package.json", &package_json)?;
 
+    // .opencode/commands/*.md — opencode reads project commands from
+    // `<project>/.opencode/commands/` per vendor/opencode README "Custom
+    // Commands". Skills emit as commands here since opencode has no separate
+    // skills surface.
+    if !ir.skills.is_empty() {
+        let commands_dir = dir.join(".opencode").join("commands");
+        create_dir(&commands_dir)?;
+        for skill in &ir.skills {
+            let content = render_skill_md(skill, engine)?;
+            write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
+        }
+    }
+
+    // mcp.json — snippet for `mcpServers`. Operator merges into
+    // `<project>/.opencode.json` (or `~/.opencode.json`). We write a
+    // separate file rather than .opencode.json directly to make merging
+    // explicit and avoid clobbering an existing user config.
+    if !ir.mcp_servers.is_empty() {
+        let mcp_config = render_opencode_mcp_json(&ir.mcp_servers);
+        write_json(dir, "mcp.json", &mcp_config)?;
+    }
+
     // AGENTS.md — combined instructions, skill docs, and agent descriptions
     let agents_md = render_agents_md(ir, true, engine)?;
     write_file(&dir.join("AGENTS.md"), &agents_md)?;
@@ -254,6 +276,15 @@ fn emit_codex(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
             let content = render_skill_md(skill, engine)?;
             write_file(&skills_dir.join(format!("{}.md", skill.name)), &content)?;
         }
+    }
+
+    // mcp.toml — snippet for `[mcp_servers.NAME]`. Operator merges into
+    // `~/.codex/config.toml` (Codex stores MCP server config user-globally
+    // per `vendor/codex/docs/config.md`). Snippet form keeps the merge
+    // explicit and avoids clobbering existing user config.
+    if !ir.mcp_servers.is_empty() {
+        let mcp_toml = render_codex_mcp_toml(&ir.mcp_servers);
+        write_file(&dir.join("mcp.toml"), &mcp_toml)?;
     }
 
     // AGENTS.md — instructions and agent descriptions (NOT skills — they're in skill files)
@@ -500,6 +531,81 @@ fn render_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
         mcp_servers.insert(server.name.clone(), serde_json::Value::Object(entry));
     }
     serde_json::json!({ "mcpServers": mcp_servers })
+}
+
+/// Render OpenCode's `mcpServers` shape — env is an array of "KEY=VALUE"
+/// strings (matching `os/exec.Cmd.Env`), and stdio servers require an
+/// explicit `"type": "stdio"` per `vendor/opencode/internal/config/config.go`.
+/// Output goes to a snippet file the operator merges into `.opencode.json`.
+fn render_opencode_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
+    let mut mcp_servers = serde_json::Map::new();
+    for server in servers {
+        let mut entry = serde_json::Map::new();
+        entry.insert("type".to_string(), serde_json::Value::String("stdio".into()));
+        entry.insert(
+            "command".to_string(),
+            serde_json::Value::String(server.command.clone()),
+        );
+        if !server.args.is_empty() {
+            entry.insert(
+                "args".to_string(),
+                serde_json::to_value(&server.args).unwrap_or_default(),
+            );
+        }
+        if !server.env.is_empty() {
+            let env_pairs: Vec<String> = server
+                .env
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            entry.insert(
+                "env".to_string(),
+                serde_json::to_value(env_pairs).unwrap_or_default(),
+            );
+        }
+        mcp_servers.insert(server.name.clone(), serde_json::Value::Object(entry));
+    }
+    serde_json::json!({ "mcpServers": mcp_servers })
+}
+
+/// Render Codex's `[mcp_servers.NAME]` TOML shape per
+/// `vendor/codex/codex-rs/core/config.schema.json`. Output is a snippet the
+/// operator merges into `~/.codex/config.toml` (Codex has no per-project
+/// config file as of vendored docs).
+fn render_codex_mcp_toml(servers: &[McpServerDef]) -> String {
+    fn escape_basic(s: &str) -> String {
+        s.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+    let mut out = String::new();
+    for (i, server) in servers.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(&format!("[mcp_servers.{}]\n", server.name));
+        out.push_str(&format!(
+            "command = \"{}\"\n",
+            escape_basic(&server.command)
+        ));
+        if !server.args.is_empty() {
+            let args = server
+                .args
+                .iter()
+                .map(|a| format!("\"{}\"", escape_basic(a)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!("args = [{args}]\n"));
+        }
+        if let Some(cwd) = &server.cwd {
+            out.push_str(&format!("cwd = \"{}\"\n", escape_basic(cwd)));
+        }
+        if !server.env.is_empty() {
+            out.push_str(&format!("\n[mcp_servers.{}.env]\n", server.name));
+            for (k, v) in &server.env {
+                out.push_str(&format!("{k} = \"{}\"\n", escape_basic(v)));
+            }
+        }
+    }
+    out
 }
 
 /// Render `.lsp.json` — keyed by server name, mirroring `.mcp.json`'s shape.

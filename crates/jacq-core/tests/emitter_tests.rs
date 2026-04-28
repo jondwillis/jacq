@@ -340,6 +340,35 @@ mod opencode {
         // Skills should be documented in AGENTS.md since OpenCode has partial skill support
         assert!(content.contains("search"));
     }
+
+    #[test]
+    fn emits_mcp_json_snippet_with_stdio_type_and_env_array() {
+        // OpenCode's MCPServer struct (vendor/opencode/internal/config/config.go)
+        // requires `type: stdio` and accepts env as ["KEY=VALUE", ...] strings.
+        let ir = build_ir(vec![Target::OpenCode]);
+        let (_tmp, out) = emit_opencode(&ir);
+
+        assert!(file_exists(&out, "mcp.json"));
+        let content = read_file(&out, "mcp.json");
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        let server = &parsed["mcpServers"]["db-server"];
+        assert_eq!(server["type"], "stdio");
+        assert_eq!(server["command"], "npx");
+        let env = server["env"].as_array().expect("env must be an array");
+        assert_eq!(env.len(), 1);
+        assert_eq!(env[0], "DB_URL=postgres://localhost/test");
+    }
+
+    #[test]
+    fn emits_commands_under_dot_opencode() {
+        // Project commands live at <project>/.opencode/commands/<name>.md
+        // per vendor/opencode README "Custom Commands".
+        let ir = build_ir(vec![Target::OpenCode]);
+        let (_tmp, out) = emit_opencode(&ir);
+
+        assert!(file_exists(&out, ".opencode/commands/search.md"));
+    }
 }
 
 // ===========================================================================
@@ -415,6 +444,27 @@ mod codex {
 
         // Codex has full skill support — should emit skill .md files
         assert!(file_exists(&out, "skills/search.md"));
+    }
+
+    #[test]
+    fn emits_mcp_toml_snippet() {
+        // Codex's MCP config lives at ~/.codex/config.toml as
+        // [mcp_servers.NAME] tables (vendor/codex/codex-rs/core/config.schema.json).
+        // We emit a snippet for the operator to merge.
+        let ir = build_ir(vec![Target::Codex]);
+        let (_tmp, out) = emit_codex(&ir);
+
+        assert!(file_exists(&out, "mcp.toml"));
+        let content = read_file(&out, "mcp.toml");
+
+        assert!(
+            content.contains("[mcp_servers.db-server]"),
+            "expected [mcp_servers.<name>] header, got:\n{content}"
+        );
+        assert!(content.contains(r#"command = "npx""#));
+        assert!(content.contains(r#"args = ["-y", "@test/db-mcp"]"#));
+        assert!(content.contains("[mcp_servers.db-server.env]"));
+        assert!(content.contains(r#"DB_URL = "postgres://localhost/test""#));
     }
 }
 
