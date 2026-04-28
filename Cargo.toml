@@ -6,7 +6,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.94"
 license = "MIT"
@@ -42,7 +42,7 @@ tar = "0.4"
 flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }
 
 # Internal crates
-jacq-core = { path = "crates/jacq-core", version = "0.1.0" }
+jacq-core = { path = "crates/jacq-core", version = "0.1.1" }
 
 # Dev dependencies
 [workspace.dependencies.insta]
