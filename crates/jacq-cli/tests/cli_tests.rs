@@ -423,15 +423,93 @@ mod init {
     }
 
     #[test]
-    fn existing_dir_fails() {
+    fn refuses_to_clobber_existing_plugin_yaml() {
         let tmp = TempDir::new().unwrap();
-        // tmp.path() already exists
+        std::fs::write(tmp.path().join("plugin.yaml"), "# pre-existing\n").unwrap();
+
         let output = jacq()
             .args(["init", tmp.path().to_str().unwrap()])
             .output()
             .unwrap();
         assert!(!output.status.success());
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(stderr.contains("already exists"));
+        assert!(
+            stderr.contains("plugin.yaml"),
+            "expected error to mention plugin.yaml, got: {stderr}"
+        );
+    }
+
+    #[test]
+    fn scaffolds_into_existing_dir_without_plugin_yaml() {
+        // Option C: bare scaffold may add a manifest to an existing repo,
+        // as long as no plugin.yaml is already there. Pre-existing files
+        // (e.g. README, .git) should be preserved untouched.
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("README.md"), "hello\n").unwrap();
+
+        let output = jacq()
+            .args(["init", tmp.path().to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        assert!(tmp.path().join("plugin.yaml").exists());
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("README.md")).unwrap(),
+            "hello\n",
+            "pre-existing README must not be modified"
+        );
+    }
+
+    #[test]
+    fn from_refuses_non_empty_target() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("stray.txt"), "x").unwrap();
+
+        let output = jacq()
+            .args([
+                "init",
+                tmp.path().to_str().unwrap(),
+                "--from",
+                fixture("claude-code-plugin").to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("not empty"),
+            "expected 'not empty' error, got: {stderr}"
+        );
+    }
+
+    #[test]
+    fn bare_init_uses_cwd_basename() {
+        // No NAME arg: derive plugin name from cwd's basename, write into cwd.
+        let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("my-cwd-plugin");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        let output = jacq()
+            .current_dir(&plugin_dir)
+            .args(["init"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        assert!(plugin_dir.join("plugin.yaml").exists());
+        let yaml = std::fs::read_to_string(plugin_dir.join("plugin.yaml")).unwrap();
+        assert!(
+            yaml.contains("name: my-cwd-plugin"),
+            "expected name derived from cwd basename, got: {yaml}"
+        );
     }
 }

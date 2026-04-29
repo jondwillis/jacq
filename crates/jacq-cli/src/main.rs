@@ -18,7 +18,7 @@ fn main() {
             name,
             from,
             targets,
-        } => cmd_init(&name, from.as_deref(), targets),
+        } => cmd_init(name.as_deref(), from.as_deref(), targets),
         cli::Command::Validate { path, target } => cmd_validate(&path, target),
         cli::Command::Build {
             path,
@@ -37,19 +37,66 @@ fn main() {
 }
 
 fn cmd_init(
-    name: &str,
+    name: Option<&str>,
     from: Option<&std::path::Path>,
     targets_override: Option<Vec<Target>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let dir = std::path::Path::new(name);
-    if dir.exists() {
-        return Err(format!("directory '{name}' already exists").into());
+    // Resolve target directory and plugin name. Two roles, formerly conflated:
+    // - `dir`: where files get written
+    // - `plugin_name`: what goes in plugin.yaml's `name:` field
+    // With no NAME, operate on cwd and derive the plugin name from its basename.
+    let (dir, plugin_name): (std::path::PathBuf, String) = match name {
+        Some(n) => {
+            let dir = std::path::PathBuf::from(n);
+            // Plugin name is the basename of the path, matching the prior
+            // behavior (e.g. `init foo/bar/my-plugin` → name: my-plugin).
+            let plugin_name = dir
+                .file_name()
+                .ok_or_else(|| format!("cannot derive plugin name from '{n}'"))?
+                .to_string_lossy()
+                .into_owned();
+            (dir, plugin_name)
+        }
+        None => {
+            let cwd = std::env::current_dir()?;
+            let basename = cwd
+                .file_name()
+                .ok_or("cannot derive plugin name from current directory")?
+                .to_string_lossy()
+                .into_owned();
+            (std::path::PathBuf::from("."), basename)
+        }
+    };
+
+    // Mode-specific safety checks:
+    // - `--from` import: target must be absent or empty (excluding `.git`)
+    // - bare scaffold: refuse only if a plugin.yaml already exists
+    if from.is_some() {
+        if dir.exists() {
+            let mut entries = std::fs::read_dir(&dir)?
+                .filter_map(Result::ok)
+                .filter(|e| e.file_name() != ".git");
+            if entries.next().is_some() {
+                return Err(format!(
+                    "target directory '{}' is not empty; --from refuses to mix imported \
+                     content with existing files",
+                    dir.display()
+                )
+                .into());
+            }
+        }
+    } else if dir.join("plugin.yaml").exists() {
+        return Err(format!(
+            "'{}' already contains a plugin.yaml",
+            dir.display()
+        )
+        .into());
     }
 
     if let Some(source) = from {
         // Import existing plugin (any harness layout)
         let ir = parser::parse_plugin(source)?;
-        std::fs::create_dir_all(dir)?;
+        std::fs::create_dir_all(&dir)?;
 
         // Write IR manifest. Targets policy:
         // - --targets given: use it verbatim (user is explicit)
@@ -127,7 +174,7 @@ fn cmd_init(
             .map(|t| t.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        println!("Imported from {} → {name}/", source.display());
+        println!("Imported from {} → {}/", source.display(), dir.display());
         println!("  plugin.yaml created with ir_version: 0.1");
         println!("  targets: [{target_list}]");
         println!(
@@ -141,14 +188,10 @@ fn cmd_init(
         );
         println!("\nNext: run `jacq build` to materialize wrappers for each target");
     } else {
-        // Scaffold a new plugin
+        // Scaffold a new plugin (or add a manifest to an existing repo)
         std::fs::create_dir_all(dir.join("skills"))?;
         std::fs::create_dir_all(dir.join("instructions"))?;
 
-        let plugin_name = std::path::Path::new(name)
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy();
         let targets = targets_override.unwrap_or_else(|| vec![Target::ClaudeCode]);
         let target_list = targets
             .iter()
@@ -167,24 +210,34 @@ license: "MIT"
         );
         std::fs::write(dir.join("plugin.yaml"), manifest)?;
 
-        let example_skill = r#"---
+        // Don't clobber example files that the user (or upstream) already wrote.
+        let example_skill_path = dir.join("skills").join("example.md");
+        let wrote_example_skill = !example_skill_path.exists();
+        if wrote_example_skill {
+            let example_skill = r#"---
 description: Example skill
 argument-hint: [describe what to do]
 ---
 
 You are a helpful assistant. The user's request: $ARGUMENTS
 "#;
-        std::fs::write(dir.join("skills").join("example.md"), example_skill)?;
+            std::fs::write(&example_skill_path, example_skill)?;
+        }
 
-        std::fs::write(
-            dir.join("instructions").join("rules.md"),
-            "# Rules\n\nAdd your instructions here.\n",
-        )?;
+        let rules_path = dir.join("instructions").join("rules.md");
+        let wrote_rules = !rules_path.exists();
+        if wrote_rules {
+            std::fs::write(&rules_path, "# Rules\n\nAdd your instructions here.\n")?;
+        }
 
-        println!("Created {name}/");
-        println!("  plugin.yaml  (targets: [{target_list}])");
-        println!("  skills/example.md");
-        println!("  instructions/rules.md");
+        println!("Created {}/", dir.display());
+        println!("  plugin.yaml  (targets: [{target_list}], name: {plugin_name})");
+        if wrote_example_skill {
+            println!("  skills/example.md");
+        }
+        if wrote_rules {
+            println!("  instructions/rules.md");
+        }
         println!("\nNext: edit plugin.yaml and run `jacq build`");
     }
 

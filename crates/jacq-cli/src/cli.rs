@@ -24,9 +24,15 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Scaffold a new plugin or import from an existing one
+    ///
+    /// With no NAME, operates on the current directory and derives the plugin
+    /// name from its basename. Bare scaffold mode adds a `plugin.yaml` (and
+    /// any missing scaffold files) without clobbering existing content;
+    /// `--from` mode requires the target directory to be empty (excluding
+    /// `.git`).
     Init {
-        /// Plugin name
-        name: String,
+        /// Plugin name (defaults to current directory's basename)
+        name: Option<String>,
 
         /// Import from an existing plugin directory (any harness layout)
         #[arg(long)]
