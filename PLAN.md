@@ -191,9 +191,12 @@ jacq build --target opencode --strict  # fail on any capability gap (no fallback
 jacq test                              # validate outputs against target schemas
 jacq test --target claude-code --live  # actually install and smoke-test
 
-# Package / distribute  
-jacq pack                              # create distributable archives per target
-jacq publish                           # push to registry (future)
+# Package / distribute (REMOVED — see "Subcommand audit" below)
+# Earlier drafts shipped `jacq pack` for tar.gz archive creation. Removed
+# in 0.2 because the Claude Code marketplace consumes git URLs / local
+# paths via `source`, not archives — `pack`'s output had no real consumer.
+# If a future GitHub Releases flow needs archives, reintroduce as
+# `jacq build --archive`.
 ```
 
 ---
@@ -233,12 +236,12 @@ jacq publish                           # push to registry (future)
 - Each emitter uses Tera templates for file generation
 
 ### Phase 5: CLI commands
-- `jacq init <name>` — scaffold new plugin (interactive via dialoguer crate)
+- `jacq init <name> [--from <path>] [--targets <list>]` — scaffold new plugin or import existing one (target detection via parser::detect_targets)
 - `jacq validate [--target <target>]` — parse + analyze without generating
-- `jacq build [--target <target>]` — full pipeline: parse → validate → analyze → generate
+- `jacq build [--target <target>] [--output <dir>]` — defaults to in-place polyglot mode; `--output` switches to isolated-tree emit
 - `jacq test` — validate generated output against target schemas
-- `jacq pack` — create distributable archives per target
 - `jacq inspect` — show capability matrix and compatibility report
+- ~~`jacq pack`~~ — REMOVED in 0.2 (vestigial — Claude Code marketplace uses git URLs, not archives)
 
 ### Phase 6: Dogfooding + snapshot tests
 - Import notes-app-plugin as test fixture, compile to OpenCode + Codex

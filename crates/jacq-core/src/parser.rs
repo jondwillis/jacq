@@ -30,7 +30,30 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
         source: e,
     })?;
 
-    let (manifest, manifest_format) = parse_manifest(&dir)?;
+    let (manifest, yaml_marketplace, manifest_format) = parse_manifest_and_marketplace(&dir)?;
+
+    // Resolve marketplace: plugin.yaml's `marketplace:` section wins over a
+    // sibling .claude-plugin/marketplace.json. Both-present is a warning, not
+    // an error — we tell the user which one is canonical and continue.
+    let mkt_json_path = dir.join(".claude-plugin").join("marketplace.json");
+    let marketplace = match (yaml_marketplace, mkt_json_path.exists()) {
+        (Some(yaml_mkt), true) => {
+            // The synthesized-from-marketplace.json case (no manifest exists)
+            // already populated yaml_marketplace from marketplace.json itself,
+            // so skip the dueling-sources warning when format is Ir-or-Native.
+            if manifest_format == ManifestFormat::Ir {
+                eprintln!(
+                    "  warning: both plugin.yaml `marketplace:` and \
+                     .claude-plugin/marketplace.json exist; using plugin.yaml \
+                     (delete one to silence this warning)"
+                );
+            }
+            Some(yaml_mkt)
+        }
+        (Some(yaml_mkt), false) => Some(yaml_mkt),
+        (None, true) => Some(parse_marketplace_json(&mkt_json_path)?),
+        (None, false) => None,
+    };
 
     let skills = parse_md_files(&dir, "skills", &manifest_format)?;
     let commands = parse_md_files(&dir, "commands", &manifest_format)?;
@@ -49,6 +72,7 @@ pub fn parse_plugin(dir: &Path) -> Result<PluginIR> {
     // chosen target list, so it has to come after inference.
     let mut ir = PluginIR {
         manifest,
+        marketplace,
         skills: all_skills,
         agents,
         hooks,
@@ -154,56 +178,226 @@ fn file_stem_or_err(path: &Path) -> Result<String> {
     Ok(stem)
 }
 
+/// Derive the canonical skill name from a markdown file's path.
+///
+/// Skills come in two on-disk shapes:
+/// - **Flat**: `commands/greet.md` → name `"greet"` (file stem)
+/// - **Anthropic skill convention**: `skills/greet/SKILL.md` → name `"greet"`
+///   (parent directory). Every directory-style skill uses the same literal
+///   filename `SKILL.md`, so the file stem alone would collapse them all
+///   to `"SKILL"` and clobber each other in any per-name output map.
+///
+/// Detection is case-sensitive on `SKILL` because that's how Anthropic's spec
+/// writes it (see vendor/cursor-marketplace-template/plugins/*/skills/*/SKILL.md).
+fn derive_skill_name(path: &Path) -> Result<String> {
+    let stem = file_stem_or_err(path)?;
+    if stem == "SKILL" {
+        let parent_name = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| {
+                let s = n.to_string_lossy().to_string();
+                if s.is_empty() { None } else { Some(s) }
+            })
+            .ok_or_else(|| JacqError::ParseError {
+                reason: format!(
+                    "SKILL.md file has no usable parent directory name: {}",
+                    path.display()
+                ),
+            })?;
+        Ok(parent_name)
+    } else {
+        Ok(stem)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Manifest parsing
 // ---------------------------------------------------------------------------
 
-fn parse_manifest(dir: &Path) -> Result<(PluginManifest, ManifestFormat)> {
+/// Parse the manifest and any marketplace section co-located in the same file
+/// (plugin.yaml's `marketplace:` field). The standalone `.claude-plugin/marketplace.json`
+/// is loaded separately in `parse_plugin`.
+fn parse_manifest_and_marketplace(
+    dir: &Path,
+) -> Result<(PluginManifest, Option<MarketplaceMetadata>, ManifestFormat)> {
     // Try IR format first: plugin.yaml at root
     let ir_path = dir.join("plugin.yaml");
     if ir_path.exists() {
         let content = read_file(&ir_path)?;
-        let manifest: PluginManifest =
+        // Wrap PluginManifest in a struct that also captures `marketplace:`.
+        // serde(flatten) merges the manifest fields at the top level so existing
+        // plugin.yaml files keep parsing identically.
+        #[derive(serde::Deserialize)]
+        struct YamlFile {
+            #[serde(flatten)]
+            manifest: PluginManifest,
+            #[serde(default)]
+            marketplace: Option<MarketplaceMetadata>,
+        }
+        let parsed: YamlFile =
             serde_yaml::from_str(&content).map_err(|e| JacqError::ParseError {
                 reason: format!("{}: {e}", ir_path.display()),
             })?;
-        return Ok((manifest, ManifestFormat::Ir));
+        return Ok((parsed.manifest, parsed.marketplace, ManifestFormat::Ir));
     }
 
     // Try Claude Code format: .claude-plugin/plugin.json
     let cc_path = dir.join(".claude-plugin").join("plugin.json");
     if cc_path.exists() {
-        return parse_json_manifest(&cc_path).map(|m| (m, ManifestFormat::ClaudeCodeNative));
+        return parse_json_manifest(&cc_path).map(|m| (m, None, ManifestFormat::ClaudeCodeNative));
     }
 
     // Try Cursor format: .cursor-plugin/plugin.json
     let cursor_path = dir.join(".cursor-plugin").join("plugin.json");
     if cursor_path.exists() {
-        return parse_json_manifest(&cursor_path).map(|m| (m, ManifestFormat::CursorNative));
+        return parse_json_manifest(&cursor_path).map(|m| (m, None, ManifestFormat::CursorNative));
     }
 
     // Try Codex format: .codex-plugin/plugin.json
     let codex_path = dir.join(".codex-plugin").join("plugin.json");
     if codex_path.exists() {
-        return parse_json_manifest(&codex_path).map(|m| (m, ManifestFormat::CodexNative));
+        return parse_json_manifest(&codex_path).map(|m| (m, None, ManifestFormat::CodexNative));
     }
 
     // Try OpenClaw format: openclaw.plugin.json
     let openclaw_path = dir.join("openclaw.plugin.json");
     if openclaw_path.exists() {
-        return parse_json_manifest(&openclaw_path).map(|m| (m, ManifestFormat::OpenClawNative));
+        return parse_json_manifest(&openclaw_path)
+            .map(|m| (m, None, ManifestFormat::OpenClawNative));
     }
 
     // Try root plugin.json — no per-target subdirectory hint, but historically
     // Claude Code plugins lived here before the .claude-plugin/ standard.
     let root_json = dir.join("plugin.json");
     if root_json.exists() {
-        return parse_json_manifest(&root_json).map(|m| (m, ManifestFormat::RootPluginJson));
+        return parse_json_manifest(&root_json).map(|m| (m, None, ManifestFormat::RootPluginJson));
+    }
+
+    // No manifest at all — but a marketplace.json alone counts as a valid
+    // "plugin source" too (a marketplace catalog with no embedded plugin).
+    // Synthesize a minimal manifest from the marketplace's top-level name so
+    // the rest of the pipeline works.
+    let mkt_path = dir.join(".claude-plugin").join("marketplace.json");
+    if mkt_path.exists() {
+        let marketplace = parse_marketplace_json(&mkt_path)?;
+        let manifest = PluginManifest {
+            name: marketplace.name.clone(),
+            version: marketplace
+                .metadata
+                .as_ref()
+                .and_then(|m| m.version.clone())
+                .unwrap_or_else(default_version),
+            description: marketplace
+                .description
+                .clone()
+                .or_else(|| {
+                    marketplace
+                        .metadata
+                        .as_ref()
+                        .and_then(|m| m.description.clone())
+                })
+                .unwrap_or_default(),
+            author: Author::Structured {
+                name: marketplace.owner.name.clone(),
+                email: marketplace.owner.email.clone(),
+                url: marketplace.owner.url.clone(),
+            },
+            license: None,
+            keywords: Vec::new(),
+            homepage: None,
+            repository: None,
+            commands: None,
+            agents: None,
+            skills: None,
+            hooks: None,
+            mcp_servers_config: None,
+            output_styles: None,
+            lsp_servers: None,
+            user_config: None,
+            channels: None,
+            display_name: None,
+            logo: None,
+            apps: None,
+            interface: None,
+            id: None,
+            config_schema: None,
+            providers: None,
+            ir_version: None,
+            targets: vec![Target::ClaudeCode],
+            requires: None,
+            fallbacks: BTreeMap::new(),
+            vars: BTreeMap::new(),
+        };
+        return Ok((
+            manifest,
+            Some(marketplace),
+            ManifestFormat::ClaudeCodeNative,
+        ));
     }
 
     Err(JacqError::NoManifest {
         path: dir.to_path_buf(),
     })
+}
+
+fn default_version() -> String {
+    "0.0.0".to_string()
+}
+
+fn parse_marketplace_json(path: &Path) -> Result<MarketplaceMetadata> {
+    let content = read_file(path)?;
+    serde_json::from_str(&content).map_err(|e| JacqError::ParseError {
+        reason: format!("{}: {e}", path.display()),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Target detection — for `init --from` and any caller that needs to know
+// which harness layouts a directory already supports
+// ---------------------------------------------------------------------------
+
+/// Probe a directory for existing target wrappers and return which targets
+/// the directory already speaks. Used by `init --from` to seed `targets:`
+/// from observed structure rather than guessing.
+///
+/// Markers per target:
+/// - `Target::ClaudeCode`: `.claude-plugin/plugin.json` OR `.claude-plugin/marketplace.json`
+/// - `Target::Codex`: `.codex-plugin/plugin.json`
+/// - `Target::Cursor`: `.cursor-plugin/plugin.json`
+/// - `Target::OpenClaw`: `openclaw.plugin.json`
+/// - `Target::OpenCode`: requires BOTH `package.json` AND `.opencode/` directory.
+///   `package.json` alone is too generic (every npm project on Earth has one);
+///   `.opencode/` alone is a soft signal but the manifest convention pairs them.
+pub fn detect_targets(dir: &Path) -> Vec<Target> {
+    let mut out = Vec::new();
+
+    if dir.join(".claude-plugin").join("plugin.json").exists()
+        || dir.join(".claude-plugin").join("marketplace.json").exists()
+    {
+        out.push(Target::ClaudeCode);
+    }
+
+    if dir.join(".codex-plugin").join("plugin.json").exists() {
+        out.push(Target::Codex);
+    }
+
+    if dir.join(".cursor-plugin").join("plugin.json").exists() {
+        out.push(Target::Cursor);
+    }
+
+    if dir.join("openclaw.plugin.json").exists() {
+        out.push(Target::OpenClaw);
+    }
+
+    // OpenCode: require both package.json AND .opencode/ dir to avoid claiming
+    // any random Node.js project. The `.opencode/` directory is the
+    // distinguishing marker; package.json is necessary but not sufficient.
+    if dir.join("package.json").exists() && dir.join(".opencode").is_dir() {
+        out.push(Target::OpenCode);
+    }
+
+    out
 }
 
 fn parse_json_manifest(path: &Path) -> Result<PluginManifest> {
@@ -316,7 +510,7 @@ fn parse_md_files(dir: &Path, subdir: &str, _format: &ManifestFormat) -> Result<
     for entry in entries {
         let path = entry.path();
         let content = read_file(path)?;
-        let name = file_stem_or_err(path)?;
+        let name = derive_skill_name(path)?;
         let rel_path = path.strip_prefix(dir).unwrap_or(path).to_path_buf();
 
         let (yaml_str, body) = split_frontmatter(&content);
@@ -623,6 +817,25 @@ fn parse_target_overrides(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn derive_skill_name_uses_parent_for_anthropic_layout() {
+        let p = Path::new("/plugin/skills/check/SKILL.md");
+        assert_eq!(derive_skill_name(p).unwrap(), "check");
+    }
+
+    #[test]
+    fn derive_skill_name_uses_stem_for_flat_command() {
+        let p = Path::new("/plugin/commands/greet.md");
+        assert_eq!(derive_skill_name(p).unwrap(), "greet");
+    }
+
+    #[test]
+    fn derive_skill_name_is_case_sensitive_on_skill_marker() {
+        // Lowercase "skill.md" is a regular file, not the marker — keep stem.
+        let p = Path::new("/plugin/commands/skill.md");
+        assert_eq!(derive_skill_name(p).unwrap(), "skill");
+    }
 
     #[test]
     fn split_frontmatter_with_yaml() {

@@ -1,11 +1,20 @@
 //! Target emitters — generate platform-specific plugin output.
 //!
-//! Each target gets its own subdirectory under the output path.
-//! The emitter for a target produces all files that target's plugin system expects.
+//! Two emit modes:
+//!
+//! - `Layout::Isolated` — full per-target tree under `output_dir/<target>/`.
+//!   Used by `jacq build --output dist/` and any case where the artifact must
+//!   be separable from the source repo (CI staging, archival, scripted bundling).
+//! - `Layout::InPlace` — only target-specific *wrappers* (manifests, MCP/LSP
+//!   config, AGENTS.md, marketplace.json) at conventional locations relative
+//!   to a source repo root. Components (`commands/`, `agents/`, `hooks/`,
+//!   `skills/`, `instructions/`) are NOT re-emitted — the source repo is
+//!   trusted to have them at canonical paths. This is what `jacq build` (no
+//!   --output) uses by default.
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::error::{JacqError, Result};
 use crate::ir::*;
@@ -13,13 +22,62 @@ use crate::targets::{self, FieldSupport, Target};
 use crate::template::RenderEngine;
 
 // ---------------------------------------------------------------------------
+// Layout — where target output goes
+// ---------------------------------------------------------------------------
+
+/// Where a target's emit output should land.
+#[derive(Debug, Clone, Copy)]
+pub enum Layout<'a> {
+    /// Full per-target tree under `base_dir/<target>/`. Used by
+    /// `jacq build --output <dir>` for distribution/staging.
+    Isolated { base_dir: &'a Path },
+
+    /// Only target-specific wrappers, written at conventional locations
+    /// relative to `repo_root`. Components are assumed to already exist at
+    /// canonical paths in the source repo.
+    InPlace { repo_root: &'a Path },
+}
+
+impl<'a> Layout<'a> {
+    /// Compute the directory this target should write into for this layout.
+    fn target_root(&self, target: Target) -> PathBuf {
+        match self {
+            Layout::Isolated { base_dir } => base_dir.join(target.as_str()),
+            Layout::InPlace { repo_root } => repo_root.to_path_buf(),
+        }
+    }
+
+    fn is_in_place(&self) -> bool {
+        matches!(self, Layout::InPlace { .. })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /// Emit a plugin IR to the output directory, generating one subdirectory per target.
+///
+/// Equivalent to `emit_with_layout(ir, &Layout::Isolated { base_dir: output_dir })`.
 pub fn emit(ir: &PluginIR, output_dir: &Path) -> Result<()> {
+    emit_with_layout(
+        ir,
+        &Layout::Isolated {
+            base_dir: output_dir,
+        },
+    )
+}
+
+/// Emit a plugin IR in-place at `repo_root`, writing only target-specific
+/// wrappers. Components are not re-emitted; they must already exist at
+/// canonical paths in the source repo.
+pub fn emit_in_place(ir: &PluginIR, repo_root: &Path) -> Result<()> {
+    emit_with_layout(ir, &Layout::InPlace { repo_root })
+}
+
+fn emit_with_layout(ir: &PluginIR, layout: &Layout) -> Result<()> {
     for target in &ir.manifest.targets {
-        let target_dir = output_dir.join(target.as_str());
+        let target_dir = layout.target_root(*target);
         fs::create_dir_all(&target_dir).map_err(|e| JacqError::IoWithPath {
             path: target_dir.clone(),
             source: e,
@@ -28,11 +86,11 @@ pub fn emit(ir: &PluginIR, output_dir: &Path) -> Result<()> {
         let engine = RenderEngine::new(&ir.manifest.vars, &ir.shared, *target)?;
 
         match target {
-            Target::ClaudeCode => emit_claude_code(ir, &engine, &target_dir)?,
-            Target::OpenCode => emit_opencode(ir, &engine, &target_dir)?,
-            Target::Codex => emit_codex(ir, &engine, &target_dir)?,
-            Target::Cursor => emit_cursor(ir, &engine, &target_dir)?,
-            Target::OpenClaw => emit_openclaw(ir, &engine, &target_dir)?,
+            Target::ClaudeCode => emit_claude_code(ir, &engine, &target_dir, layout)?,
+            Target::OpenCode => emit_opencode(ir, &engine, &target_dir, layout)?,
+            Target::Codex => emit_codex(ir, &engine, &target_dir, layout)?,
+            Target::Cursor => emit_cursor(ir, &engine, &target_dir, layout)?,
+            Target::OpenClaw => emit_openclaw(ir, &engine, &target_dir, layout)?,
         }
     }
     Ok(())
@@ -151,7 +209,12 @@ fn build_manifest_json(manifest: &PluginManifest, target: Target) -> serde_json:
 // Claude Code emitter — identity/passthrough
 // ---------------------------------------------------------------------------
 
-fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
+fn emit_claude_code(
+    ir: &PluginIR,
+    engine: &RenderEngine,
+    dir: &Path,
+    layout: &Layout,
+) -> Result<()> {
     // Claude Code's loader looks for the manifest at `.claude-plugin/plugin.json`
     // (not at the directory root). `claude plugin validate <dir>` rejects any
     // layout with the manifest at the root with "No manifest found in
@@ -162,51 +225,68 @@ fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<
     let plugin_json = build_manifest_json(&ir.manifest, Target::ClaudeCode);
     write_json(&claude_plugin_dir, "plugin.json", &plugin_json)?;
 
-    // commands/*.md — skills with frontmatter
-    if !ir.skills.is_empty() {
-        let commands_dir = dir.join("commands");
-        create_dir(&commands_dir)?;
-        for skill in &ir.skills {
-            let content = render_skill_md(skill, engine)?;
-            write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
+    // marketplace.json — written when the IR carries marketplace metadata.
+    // A repo can be a marketplace catalog of many plugins, a single plugin
+    // listing itself (`source: "./"`), or both.
+    if let Some(marketplace) = &ir.marketplace {
+        let mkt_json = serde_json::to_value(marketplace).map_err(|e| JacqError::Serialization {
+            reason: e.to_string(),
+        })?;
+        write_json(&claude_plugin_dir, "marketplace.json", &mkt_json)?;
+    }
+
+    // Components — skipped in InPlace mode. The source repo is trusted to
+    // already have commands/, agents/, hooks/ at canonical paths; re-rendering
+    // them would either be a no-op (no templates) or destructive (with
+    // templates, since rendered output differs from source).
+    if !layout.is_in_place() {
+        // commands/*.md — skills with frontmatter
+        if !ir.skills.is_empty() {
+            let commands_dir = dir.join("commands");
+            create_dir(&commands_dir)?;
+            for skill in &ir.skills {
+                let content = render_skill_md(skill, engine)?;
+                write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
+            }
+        }
+
+        // agents/*.md — agents with frontmatter
+        if !ir.agents.is_empty() {
+            let agents_dir = dir.join("agents");
+            create_dir(&agents_dir)?;
+            for agent in &ir.agents {
+                let content = render_agent_md(agent, engine)?;
+                write_file(&agents_dir.join(format!("{}.md", agent.name)), &content)?;
+            }
+        }
+
+        // hooks — Claude Code hook definitions
+        if !ir.hooks.is_empty() {
+            let hooks_dir = dir.join("hooks");
+            create_dir(&hooks_dir)?;
+            for hook in &ir.hooks {
+                let content =
+                    serde_yaml::to_string(&hook).map_err(|e| JacqError::Serialization {
+                        reason: e.to_string(),
+                    })?;
+                write_file(&hooks_dir.join(format!("{}.yaml", hook.name)), &content)?;
+            }
         }
     }
 
-    // agents/*.md — agents with frontmatter
-    if !ir.agents.is_empty() {
-        let agents_dir = dir.join("agents");
-        create_dir(&agents_dir)?;
-        for agent in &ir.agents {
-            let content = render_agent_md(agent, engine)?;
-            write_file(&agents_dir.join(format!("{}.md", agent.name)), &content)?;
-        }
-    }
-
-    // hooks — Claude Code hook definitions
-    if !ir.hooks.is_empty() {
-        let hooks_dir = dir.join("hooks");
-        create_dir(&hooks_dir)?;
-        for hook in &ir.hooks {
-            let content = serde_yaml::to_string(&hook).map_err(|e| JacqError::Serialization {
-                reason: e.to_string(),
-            })?;
-            write_file(&hooks_dir.join(format!("{}.yaml", hook.name)), &content)?;
-        }
-    }
-
-    // .mcp.json — MCP server configuration
+    // .mcp.json — MCP server configuration (target-specific, always written)
     if !ir.mcp_servers.is_empty() {
         let mcp_config = render_mcp_json(&ir.mcp_servers);
         write_json(dir, ".mcp.json", &mcp_config)?;
     }
 
-    // .lsp.json — LSP server configuration
+    // .lsp.json — LSP server configuration (target-specific, always written)
     if !ir.lsp_servers.is_empty() {
         let lsp_config = render_lsp_json(&ir.lsp_servers);
         write_json(dir, ".lsp.json", &lsp_config)?;
     }
 
-    // CLAUDE.md — instructions
+    // CLAUDE.md — instructions (target-specific, always written)
     if !ir.instructions.is_empty() {
         let content = render_instructions(&ir.instructions, engine)?;
         write_file(&dir.join("CLAUDE.md"), &content)?;
@@ -227,15 +307,17 @@ fn emit_claude_code(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<
 // OpenCode emitter
 // ---------------------------------------------------------------------------
 
-fn emit_opencode(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
+fn emit_opencode(ir: &PluginIR, engine: &RenderEngine, dir: &Path, layout: &Layout) -> Result<()> {
     let package_json = build_manifest_json(&ir.manifest, Target::OpenCode);
     write_json(dir, "package.json", &package_json)?;
 
     // .opencode/commands/*.md — opencode reads project commands from
     // `<project>/.opencode/commands/` per vendor/opencode README "Custom
     // Commands". Skills emit as commands here since opencode has no separate
-    // skills surface.
-    if !ir.skills.is_empty() {
+    // skills surface. Skipped in InPlace mode (v1 does metadata-only in-place;
+    // OpenCode polyglot from a Claude Code-shaped source needs symlinks from
+    // .opencode/commands/ → ../../commands/, which is a v2 follow-up).
+    if !layout.is_in_place() && !ir.skills.is_empty() {
         let commands_dir = dir.join(".opencode").join("commands");
         create_dir(&commands_dir)?;
         for skill in &ir.skills {
@@ -264,12 +346,21 @@ fn emit_opencode(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()>
 // Codex emitter
 // ---------------------------------------------------------------------------
 
-fn emit_codex(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
+fn emit_codex(ir: &PluginIR, engine: &RenderEngine, dir: &Path, layout: &Layout) -> Result<()> {
+    // Codex's loader looks for `.codex-plugin/plugin.json` at the plugin root
+    // (vendor/codex/codex-rs/core/src/plugins/manifest.rs:399). Earlier jacq
+    // versions wrote `plugin.json` at the dir root — wrong path, hidden by
+    // isolated mode where no real consumer read the output. In-place mode
+    // surfaces it: writing `plugin.json` at a source repo root would collide
+    // with everything else there.
+    let codex_plugin_dir = dir.join(".codex-plugin");
+    create_dir(&codex_plugin_dir)?;
     let plugin_json = build_manifest_json(&ir.manifest, Target::Codex);
-    write_json(dir, "plugin.json", &plugin_json)?;
+    write_json(&codex_plugin_dir, "plugin.json", &plugin_json)?;
 
-    // skills/*.md — Codex has full skill support
-    if !ir.skills.is_empty() {
+    // skills/*.md — Codex has full skill support. Skipped in InPlace mode
+    // (source assumed to have skills/ at canonical path).
+    if !layout.is_in_place() && !ir.skills.is_empty() {
         let skills_dir = dir.join("skills");
         create_dir(&skills_dir)?;
         for skill in &ir.skills {
@@ -298,40 +389,45 @@ fn emit_codex(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
 // Cursor emitter (minimal — rules + MCP)
 // ---------------------------------------------------------------------------
 
-fn emit_cursor(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
+fn emit_cursor(ir: &PluginIR, engine: &RenderEngine, dir: &Path, layout: &Layout) -> Result<()> {
     // .cursor-plugin/plugin.json
     let cursor_plugin_dir = dir.join(".cursor-plugin");
     create_dir(&cursor_plugin_dir)?;
     let plugin_json = build_manifest_json(&ir.manifest, Target::Cursor);
     write_json(&cursor_plugin_dir, "plugin.json", &plugin_json)?;
 
-    // commands/*.md — skills with frontmatter
-    if !ir.skills.is_empty() {
-        let commands_dir = dir.join("commands");
-        create_dir(&commands_dir)?;
-        for skill in &ir.skills {
-            let content = render_skill_md(skill, engine)?;
-            write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
+    // Components skipped in InPlace mode (source has commands/agents at root).
+    if !layout.is_in_place() {
+        // commands/*.md — skills with frontmatter
+        if !ir.skills.is_empty() {
+            let commands_dir = dir.join("commands");
+            create_dir(&commands_dir)?;
+            for skill in &ir.skills {
+                let content = render_skill_md(skill, engine)?;
+                write_file(&commands_dir.join(format!("{}.md", skill.name)), &content)?;
+            }
+        }
+
+        // agents/*.md
+        if !ir.agents.is_empty() {
+            let agents_dir = dir.join("agents");
+            create_dir(&agents_dir)?;
+            for agent in &ir.agents {
+                let content = render_agent_md(agent, engine)?;
+                write_file(&agents_dir.join(format!("{}.md", agent.name)), &content)?;
+            }
         }
     }
 
-    // agents/*.md
-    if !ir.agents.is_empty() {
-        let agents_dir = dir.join("agents");
-        create_dir(&agents_dir)?;
-        for agent in &ir.agents {
-            let content = render_agent_md(agent, engine)?;
-            write_file(&agents_dir.join(format!("{}.md", agent.name)), &content)?;
-        }
-    }
-
-    // mcp.json — MCP server configuration
+    // mcp.json — MCP server configuration (target-specific, always written)
     if !ir.mcp_servers.is_empty() {
         let mcp_config = render_mcp_json(&ir.mcp_servers);
         write_json(dir, "mcp.json", &mcp_config)?;
     }
 
-    // rules/*.mdc — instructions as rules
+    // rules/*.mdc — instructions as rules (Cursor-specific transform of
+    // instructions; written in both modes since the source doesn't have rules/
+    // pre-rendered for Cursor).
     if !ir.instructions.is_empty() {
         let rules_dir = dir.join("rules");
         create_dir(&rules_dir)?;
@@ -355,7 +451,7 @@ fn emit_cursor(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
 // OpenClaw emitter (minimal — npm package + instructions)
 // ---------------------------------------------------------------------------
 
-fn emit_openclaw(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()> {
+fn emit_openclaw(ir: &PluginIR, engine: &RenderEngine, dir: &Path, layout: &Layout) -> Result<()> {
     // openclaw.plugin.json — native OpenClaw manifest
     let manifest_json = build_manifest_json(&ir.manifest, Target::OpenClaw);
     write_json(dir, "openclaw.plugin.json", &manifest_json)?;
@@ -374,8 +470,8 @@ fn emit_openclaw(ir: &PluginIR, engine: &RenderEngine, dir: &Path) -> Result<()>
     }
     write_json(dir, "package.json", &serde_json::Value::Object(pkg))?;
 
-    // skills/*.md
-    if !ir.skills.is_empty() {
+    // skills/*.md — skipped in InPlace mode (source has skills/ at canonical path).
+    if !layout.is_in_place() && !ir.skills.is_empty() {
         let skills_dir = dir.join("skills");
         create_dir(&skills_dir)?;
         for skill in &ir.skills {
@@ -541,7 +637,10 @@ fn render_opencode_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
     let mut mcp_servers = serde_json::Map::new();
     for server in servers {
         let mut entry = serde_json::Map::new();
-        entry.insert("type".to_string(), serde_json::Value::String("stdio".into()));
+        entry.insert(
+            "type".to_string(),
+            serde_json::Value::String("stdio".into()),
+        );
         entry.insert(
             "command".to_string(),
             serde_json::Value::String(server.command.clone()),
@@ -553,11 +652,8 @@ fn render_opencode_mcp_json(servers: &[McpServerDef]) -> serde_json::Value {
             );
         }
         if !server.env.is_empty() {
-            let env_pairs: Vec<String> = server
-                .env
-                .iter()
-                .map(|(k, v)| format!("{k}={v}"))
-                .collect();
+            let env_pairs: Vec<String> =
+                server.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
             entry.insert(
                 "env".to_string(),
                 serde_json::to_value(env_pairs).unwrap_or_default(),

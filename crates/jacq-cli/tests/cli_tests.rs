@@ -97,11 +97,13 @@ mod build {
         );
 
         // Should have output directories for declared targets
-        assert!(tmp.path()
-            .join("claude-code")
-            .join(".claude-plugin")
-            .join("plugin.json")
-            .exists());
+        assert!(
+            tmp.path()
+                .join("claude-code")
+                .join(".claude-plugin")
+                .join("plugin.json")
+                .exists()
+        );
         assert!(tmp.path().join("opencode").join("package.json").exists());
     }
 
@@ -121,11 +123,13 @@ mod build {
             .unwrap();
         assert!(output.status.success());
 
-        assert!(tmp.path()
-            .join("claude-code")
-            .join(".claude-plugin")
-            .join("plugin.json")
-            .exists());
+        assert!(
+            tmp.path()
+                .join("claude-code")
+                .join(".claude-plugin")
+                .join("plugin.json")
+                .exists()
+        );
         assert!(!tmp.path().join("opencode").exists());
     }
 
@@ -191,11 +195,13 @@ mod build {
             "build should print an inference note. stderr: {stderr}"
         );
         // The original bug case — claude-code must always be present
-        assert!(tmp.path()
-            .join("claude-code")
-            .join(".claude-plugin")
-            .join("plugin.json")
-            .exists());
+        assert!(
+            tmp.path()
+                .join("claude-code")
+                .join(".claude-plugin")
+                .join("plugin.json")
+                .exists()
+        );
         // The expanded behavior — every compatible target gets a dist subdir
         for target in ["opencode", "codex", "cursor", "openclaw"] {
             assert!(
@@ -204,91 +210,136 @@ mod build {
             );
         }
     }
-}
-
-// ===========================================================================
-// jacq pack
-// ===========================================================================
-
-mod pack {
-    use super::*;
 
     #[test]
-    fn packs_single_target_archive() {
+    fn in_place_build_writes_wrappers_at_repo_root() {
+        // No --output flag → in-place mode. The build directory IS the source
+        // repo: jacq writes target wrappers (.claude-plugin/plugin.json etc.)
+        // at the input path, not under a dist/ subdirectory.
         let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("in-place-target");
+        std::fs::create_dir(&plugin_dir).unwrap();
+
+        // Copy the claude-code-plugin fixture into the temp dir so the build
+        // can mutate it without touching repo state.
+        let fixture_dir = fixture("claude-code-plugin");
+        copy_dir_recursive(&fixture_dir, &plugin_dir).unwrap();
+
+        // Pre-build: no .codex-plugin should exist yet
+        assert!(!plugin_dir.join(".codex-plugin").exists());
+
         let output = jacq()
-            .args([
-                "pack",
-                fixture("ir-plugin").to_str().unwrap(),
-                "--target",
-                "claude-code",
-                "-o",
-                tmp.path().to_str().unwrap(),
-            ])
+            .args(["build", plugin_dir.to_str().unwrap(), "--target", "codex"])
             .output()
             .unwrap();
         assert!(
             output.status.success(),
-            "pack failed: {}",
+            "in-place build failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
 
-        // Archive exists, has non-trivial size, and matches the expected name.
-        let archive = tmp.path().join("ir-test-plugin-2.0.0-claude-code.tar.gz");
-        assert!(archive.exists(), "archive missing at {}", archive.display());
-        let size = std::fs::metadata(&archive).unwrap().len();
-        assert!(size > 100, "archive suspiciously small: {size} bytes");
+        // Post-build: codex wrapper exists at the SOURCE repo root
+        assert!(
+            plugin_dir.join(".codex-plugin/plugin.json").exists(),
+            "expected .codex-plugin/plugin.json at source repo root"
+        );
+
+        // Components are NOT duplicated into a dist/ subdir
+        assert!(!plugin_dir.join("dist").exists());
+        assert!(!plugin_dir.join("codex").exists());
+
+        // Original commands stay put — in-place mode doesn't touch source components
+        assert!(plugin_dir.join("commands").exists());
     }
 
     #[test]
-    fn claude_code_pack_emits_marketplace_json() {
+    fn in_place_build_polyglot_writes_all_target_wrappers() {
+        // Multi-target in-place build: each target's wrapper lands at its
+        // canonical location at the repo root, no clobbering between them.
         let tmp = TempDir::new().unwrap();
+        let plugin_dir = tmp.path().join("polyglot");
+        std::fs::create_dir(&plugin_dir).unwrap();
+        copy_dir_recursive(&fixture("ir-plugin"), &plugin_dir).unwrap();
+
+        let output = jacq()
+            .args(["build", plugin_dir.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "polyglot build failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        // Both declared targets wrote their wrappers in-place
+        assert!(plugin_dir.join(".claude-plugin/plugin.json").exists());
+        assert!(plugin_dir.join("package.json").exists()); // OpenCode wrapper
+    }
+
+    #[test]
+    fn output_flag_preserves_isolated_mode() {
+        // --output is the explicit opt-in for the legacy isolated-tree emit.
+        // The source repo MUST NOT be mutated when --output is provided.
+        let tmp = TempDir::new().unwrap();
+        let out_dir = tmp.path().join("dist");
+        let plugin_dir = tmp.path().join("source");
+        std::fs::create_dir(&plugin_dir).unwrap();
+        copy_dir_recursive(&fixture("claude-code-plugin"), &plugin_dir).unwrap();
+
+        let before_dir_listing = list_dir(&plugin_dir);
+
         let output = jacq()
             .args([
-                "pack",
-                fixture("ir-plugin").to_str().unwrap(),
+                "build",
+                plugin_dir.to_str().unwrap(),
                 "--target",
                 "claude-code",
                 "-o",
-                tmp.path().to_str().unwrap(),
+                out_dir.to_str().unwrap(),
             ])
             .output()
             .unwrap();
         assert!(output.status.success());
 
-        let marketplace = tmp.path().join("ir-test-plugin-marketplace.json");
-        assert!(marketplace.exists());
-        let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&marketplace).unwrap()).unwrap();
-        assert_eq!(json["name"], "ir-test-plugin");
-        assert_eq!(json["version"], "2.0.0");
-        assert_eq!(json["archive"], "ir-test-plugin-2.0.0-claude-code.tar.gz");
-    }
-
-    #[test]
-    fn non_claude_targets_skip_marketplace_json() {
-        let tmp = TempDir::new().unwrap();
-        let output = jacq()
-            .args([
-                "pack",
-                fixture("ir-plugin").to_str().unwrap(),
-                "--target",
-                "opencode",
-                "-o",
-                tmp.path().to_str().unwrap(),
-            ])
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-
-        // OpenCode archive present, no marketplace JSON.
+        // Output landed in dist/claude-code/, NOT at source root
         assert!(
-            tmp.path()
-                .join("ir-test-plugin-2.0.0-opencode.tar.gz")
+            out_dir
+                .join("claude-code/.claude-plugin/plugin.json")
                 .exists()
         );
-        assert!(!tmp.path().join("ir-test-plugin-marketplace.json").exists());
+
+        // Source repo unchanged
+        let after_dir_listing = list_dir(&plugin_dir);
+        assert_eq!(
+            before_dir_listing, after_dir_listing,
+            "source repo modified by --output build (should be untouched)"
+        );
     }
+}
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        let dst_path = dst.join(entry.file_name());
+        if ft.is_dir() {
+            copy_dir_recursive(&entry.path(), &dst_path)?;
+        } else {
+            std::fs::copy(entry.path(), dst_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn list_dir(dir: &std::path::Path) -> Vec<String> {
+    let mut entries: Vec<String> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    entries.sort();
+    entries
 }
 
 // ===========================================================================

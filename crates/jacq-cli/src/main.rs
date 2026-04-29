@@ -4,7 +4,6 @@ use clap::Parser;
 
 use jacq_core::analyzer::{self, Severity};
 use jacq_core::emitter;
-use jacq_core::packer;
 use jacq_core::parser;
 use jacq_core::targets::Target;
 use jacq_core::template;
@@ -15,7 +14,11 @@ fn main() {
     let cli = cli::Cli::parse();
 
     let result = match cli.command {
-        cli::Command::Init { name, from } => cmd_init(&name, from.as_deref()),
+        cli::Command::Init {
+            name,
+            from,
+            targets,
+        } => cmd_init(&name, from.as_deref(), targets),
         cli::Command::Validate { path, target } => cmd_validate(&path, target),
         cli::Command::Build {
             path,
@@ -25,11 +28,6 @@ fn main() {
         } => cmd_build(&path, target, strict, output.as_deref()),
         cli::Command::Test { path, target, .. } => cmd_validate(&path, target),
         cli::Command::Inspect { path } => cmd_inspect(&path),
-        cli::Command::Pack {
-            path,
-            target,
-            output,
-        } => cmd_pack(&path, target, output.as_deref()),
     };
 
     if let Err(e) = result {
@@ -38,22 +36,37 @@ fn main() {
     }
 }
 
-fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_init(
+    name: &str,
+    from: Option<&std::path::Path>,
+    targets_override: Option<Vec<Target>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::path::Path::new(name);
     if dir.exists() {
         return Err(format!("directory '{name}' already exists").into());
     }
 
     if let Some(source) = from {
-        // Import existing Claude Code plugin
+        // Import existing plugin (any harness layout)
         let ir = parser::parse_plugin(source)?;
         std::fs::create_dir_all(dir)?;
 
-        // Write IR manifest
+        // Write IR manifest. Targets policy:
+        // - --targets given: use it verbatim (user is explicit)
+        // - else if source has detectable target wrappers: use those
+        // - else fall back to whatever the manifest declared
+        // - else default to [claude-code]
         let mut manifest = ir.manifest.clone();
         manifest.ir_version = Some("0.1".to_string());
-        if manifest.targets.is_empty() {
-            manifest.targets = vec![Target::ClaudeCode];
+        if let Some(t) = targets_override {
+            manifest.targets = t;
+        } else {
+            let detected = parser::detect_targets(source);
+            if !detected.is_empty() {
+                manifest.targets = detected;
+            } else if manifest.targets.is_empty() {
+                manifest.targets = vec![Target::ClaudeCode];
+            }
         }
 
         let yaml = serde_yaml::to_string(&manifest)?;
@@ -108,8 +121,15 @@ fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn st
             }
         }
 
+        let target_list = manifest
+            .targets
+            .iter()
+            .map(|t| t.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
         println!("Imported from {} → {name}/", source.display());
         println!("  plugin.yaml created with ir_version: 0.1");
+        println!("  targets: [{target_list}]");
         println!(
             "  {} skill(s), {} agent(s), {} hook(s), {} MCP, {} instruction(s), {} shared",
             ir.skills.len(),
@@ -119,7 +139,7 @@ fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn st
             ir.instructions.len(),
             ir.shared.len(),
         );
-        println!("\nNext: edit plugin.yaml to add targets and run `jacq build`");
+        println!("\nNext: run `jacq build` to materialize wrappers for each target");
     } else {
         // Scaffold a new plugin
         std::fs::create_dir_all(dir.join("skills"))?;
@@ -129,9 +149,15 @@ fn cmd_init(name: &str, from: Option<&std::path::Path>) -> Result<(), Box<dyn st
             .file_name()
             .unwrap_or_default()
             .to_string_lossy();
+        let targets = targets_override.unwrap_or_else(|| vec![Target::ClaudeCode]);
+        let target_list = targets
+            .iter()
+            .map(|t| t.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
         let manifest = format!(
             r#"ir_version: "0.1"
-targets: [claude-code]
+targets: [{target_list}]
 name: {plugin_name}
 version: "0.1.0"
 description: ""
@@ -156,7 +182,7 @@ You are a helpful assistant. The user's request: $ARGUMENTS
         )?;
 
         println!("Created {name}/");
-        println!("  plugin.yaml");
+        println!("  plugin.yaml  (targets: [{target_list}])");
         println!("  skills/example.md");
         println!("  instructions/rules.md");
         println!("\nNext: edit plugin.yaml and run `jacq build`");
@@ -300,13 +326,20 @@ fn cmd_build(
         return Err("build failed due to capability errors".into());
     }
 
-    let output_dir = output.unwrap_or(std::path::Path::new("dist"));
-    std::fs::create_dir_all(output_dir)?;
-
-    emitter::emit(&ir, output_dir)?;
-
-    for t in &ir.manifest.targets {
-        println!("  Built: {}/{}", output_dir.display(), t);
+    if let Some(output_dir) = output {
+        // Isolated mode: full per-target trees under output_dir/<target>/
+        std::fs::create_dir_all(output_dir)?;
+        emitter::emit(&ir, output_dir)?;
+        for t in &ir.manifest.targets {
+            println!("  Built: {}/{}", output_dir.display(), t);
+        }
+    } else {
+        // In-place mode: target wrappers at the source repo root. Components
+        // are not re-emitted; the source repo is the install target.
+        emitter::emit_in_place(&ir, path)?;
+        for t in &ir.manifest.targets {
+            println!("  Built (in-place) for {t}");
+        }
     }
 
     Ok(())
@@ -441,69 +474,6 @@ fn cmd_inspect(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>>
                 diag.target,
                 diag.message
             );
-        }
-    }
-
-    Ok(())
-}
-
-fn cmd_pack(
-    path: &std::path::Path,
-    target: Option<Target>,
-    output: Option<&std::path::Path>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Pack runs the full build pipeline first, then archives each per-target
-    // output directory. This guarantees the archive contents match exactly
-    // what `jacq build` would produce.
-    let mut ir = parser::parse_plugin(path)?;
-    template::extract_all(&mut ir);
-
-    let template_errors = template::validate(&ir);
-    if !template_errors.is_empty() {
-        for err in &template_errors {
-            eprintln!("  [ERROR] {err}");
-        }
-        return Err(format!("{} template error(s)", template_errors.len()).into());
-    }
-
-    if let Some(t) = target {
-        ir.manifest.targets = vec![t];
-    }
-    if ir.manifest.targets.is_empty() {
-        return Err("no targets declared in plugin manifest. \
-                    Add targets to plugin.yaml or use --target"
-            .into());
-    }
-
-    if ir.targets_inferred && target.is_none() {
-        let names: Vec<&str> = ir.manifest.targets.iter().map(|t| t.as_str()).collect();
-        eprintln!(
-            "  note: inferred targets [{}] from compatibility probe — \
-             declare `targets:` in plugin.yaml to override",
-            names.join(", ")
-        );
-    }
-
-    let report = analyzer::analyze(&ir);
-    if report.errors().count() > 0 {
-        for diag in report.errors() {
-            eprintln!("  [ERROR] [{}] {}", diag.target, diag.message);
-        }
-        return Err("pack failed due to capability errors".into());
-    }
-
-    let output_dir = output.unwrap_or(std::path::Path::new("dist"));
-    std::fs::create_dir_all(output_dir)?;
-
-    emitter::emit(&ir, output_dir)?;
-
-    for t in &ir.manifest.targets {
-        let target_dir = output_dir.join(t.as_str());
-        let archive = packer::pack(*t, &ir.manifest, &target_dir, output_dir)?;
-        println!("  Packed: {}", archive.display());
-        if matches!(t, Target::ClaudeCode) {
-            let marketplace = output_dir.join(format!("{}-marketplace.json", ir.manifest.name));
-            println!("  Marketplace entry: {}", marketplace.display());
         }
     }
 

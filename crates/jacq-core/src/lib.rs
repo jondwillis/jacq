@@ -10,7 +10,6 @@ pub mod analyzer;
 pub mod emitter;
 pub mod error;
 pub mod ir;
-pub mod packer;
 pub mod parser;
 pub mod targets;
 pub mod template;

@@ -21,6 +21,13 @@ pub struct PluginIR {
     /// Parsed manifest (from plugin.yaml or plugin.json)
     pub manifest: PluginManifest,
 
+    /// Optional Claude Code marketplace metadata. Sourced from either the
+    /// `marketplace:` section of plugin.yaml or a hand-authored
+    /// `.claude-plugin/marketplace.json` at the source root. plugin.yaml wins
+    /// when both are present (the parser emits a warning).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marketplace: Option<MarketplaceMetadata>,
+
     /// Skills discovered from skills/ and commands/ directories
     pub skills: Vec<SkillDef>,
 
@@ -53,7 +60,7 @@ pub struct PluginIR {
     pub source_dir: PathBuf,
 
     /// True when `manifest.targets` was populated by parser inference rather
-    /// than declared explicitly in the manifest. Lets `inspect`/`build`/`pack`
+    /// than declared explicitly in the manifest. Lets `inspect`/`build`
     /// surface that decision instead of pretending the user wrote it.
     #[serde(skip)]
     pub targets_inferred: bool,
@@ -873,4 +880,145 @@ impl StringOrVec {
             StringOrVec::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace metadata (Claude Code marketplace.json)
+// ---------------------------------------------------------------------------
+
+/// Top-level marketplace listing, mirroring Claude Code's marketplace.json
+/// schema (see `vendor/claude-plugins-official/.claude-plugin/marketplace.json`).
+///
+/// A repo can be a marketplace catalog of many plugins, or a single plugin
+/// that lists itself as the only entry (`source: "./"`), or both. jacq emits
+/// `.claude-plugin/marketplace.json` whenever this field is set on a parsed IR.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplaceMetadata {
+    /// Marketplace identifier
+    pub name: String,
+
+    /// Marketplace description (canonical Anthropic shape: top-level field)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Marketplace owner
+    pub owner: MarketplaceOwner,
+
+    /// Listed plugins
+    #[serde(default)]
+    pub plugins: Vec<MarketplacePluginEntry>,
+
+    /// Some marketplaces (e.g., functional-emotions) wrap description/version
+    /// under a `metadata` field rather than at top level. We preserve it on
+    /// round-trip rather than lose data, but prefer top-level fields when emitting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<MarketplaceMetadataExtras>,
+}
+
+/// Optional `metadata` wrapper found in some non-canonical marketplace.json files.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MarketplaceMetadataExtras {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+/// Marketplace owner — same shape as `Author::Structured` but explicit for clarity.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplaceOwner {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// A single plugin entry in a marketplace listing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplacePluginEntry {
+    pub name: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<Author>,
+
+    /// Where to fetch this plugin from. Polymorphic: bare string for local
+    /// paths or simple URLs, object for git URL/subdir/github shapes.
+    pub source: MarketplaceSource,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keywords: Vec<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
+
+    /// Inline LSP server config — some plugins (e.g., language-server plugins)
+    /// declare their LSP config directly in the marketplace entry rather than
+    /// in a separate plugin manifest. Preserved as opaque JSON on round-trip.
+    #[serde(
+        default,
+        rename = "lspServers",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub lsp_servers: Option<serde_json::Value>,
+
+    /// Inline skill paths — some plugins declare skill paths inline. Preserved
+    /// as opaque JSON on round-trip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<serde_json::Value>,
+}
+
+/// Polymorphic source field. The Claude Code schema permits bare strings
+/// (local path or simple URL) or tagged objects with `source` discriminator.
+///
+/// Variant order matters for serde untagged: `Path` (string) must be first so
+/// plain strings match before object variants are attempted.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum MarketplaceSource {
+    /// `"./plugins/foo"` or `"https://github.com/org/repo.git"`
+    Path(String),
+
+    /// Tagged object form: `{source: "url" | "git-subdir" | "github", ...}`
+    Tagged(MarketplaceSourceTagged),
+}
+
+/// Tagged source object, dispatched by the `source` discriminator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "source", rename_all = "kebab-case")]
+pub enum MarketplaceSourceTagged {
+    /// Clone from a git URL.
+    Url {
+        url: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sha: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+    },
+    /// Clone a subdirectory from a git URL.
+    GitSubdir {
+        url: String,
+        path: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        r#ref: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sha: Option<String>,
+    },
+    /// GitHub shorthand (used by some marketplaces, e.g., stagehand).
+    Github { repo: String },
 }

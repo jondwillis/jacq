@@ -23,14 +23,20 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Scaffold a new plugin
+    /// Scaffold a new plugin or import from an existing one
     Init {
         /// Plugin name
         name: String,
 
-        /// Import from an existing Claude Code plugin directory
+        /// Import from an existing plugin directory (any harness layout)
         #[arg(long)]
         from: Option<PathBuf>,
+
+        /// Comma-separated target list (e.g. `claude-code,codex,opencode`).
+        /// When omitted: scaffold defaults to `[claude-code]`; `--from` probes
+        /// the source for existing target wrappers and seeds targets accordingly.
+        #[arg(long, value_delimiter = ',')]
+        targets: Option<Vec<Target>>,
     },
 
     /// Validate a plugin without building
@@ -45,6 +51,16 @@ pub enum Command {
     },
 
     /// Build plugin for target platforms
+    ///
+    /// Default: emit target-specific wrappers (manifests, MCP/LSP config, etc.)
+    /// in-place at the source repo root. Components (commands/, agents/, hooks/)
+    /// stay at their canonical locations — jacq does not duplicate them per
+    /// target. The repo becomes a polyglot plugin discoverable by every
+    /// declared target.
+    ///
+    /// Pass `--output <dir>` to emit isolated per-target trees under
+    /// `<dir>/<target>/...` instead. Use this for CI staging, archival, or
+    /// any case where artifacts must be separable from the source repo.
     Build {
         /// Plugin directory (defaults to current directory)
         #[arg(default_value = ".")]
@@ -58,7 +74,8 @@ pub enum Command {
         #[arg(long)]
         strict: bool,
 
-        /// Output directory (defaults to ./dist)
+        /// Output directory for isolated per-target trees. When omitted,
+        /// jacq emits in-place at the source repo root.
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
@@ -83,21 +100,5 @@ pub enum Command {
         /// Plugin directory (defaults to current directory)
         #[arg(default_value = ".")]
         path: PathBuf,
-    },
-
-    /// Package plugin for distribution as tar.gz archives (one per target).
-    /// Claude Code targets also get a marketplace.json snippet alongside.
-    Pack {
-        /// Plugin directory (defaults to current directory)
-        #[arg(default_value = ".")]
-        path: PathBuf,
-
-        /// Pack a specific target only
-        #[arg(long)]
-        target: Option<Target>,
-
-        /// Output directory (defaults to ./dist)
-        #[arg(short, long)]
-        output: Option<PathBuf>,
     },
 }

@@ -9,7 +9,8 @@ jacq takes a single plugin definition and compiles it to valid plugin output for
 ```text
 plugin dir  →  PARSE  →  IR  →  ANALYZE  →  RENDER  →  EMIT
                                     ↓
-              claude-code/  codex/  opencode/  cursor/  openclaw/
+              in-place wrappers at repo root  (default)
+              or  dist/<target>/...           (with --output)
 ```
 
 ## Why?
@@ -22,25 +23,38 @@ The AI coding agent ecosystem is fragmenting into incompatible plugin systems. E
 # Install (from source)
 cargo install --path crates/jacq-cli
 
-# Create a new plugin
+# Create a new plugin (defaults to claude-code target)
 jacq init my-plugin
 
-# Import an existing Claude Code plugin as IR
-jacq init my-plugin --from ~/some-existing-cc-plugin
+# Scaffold a polyglot plugin from day one
+jacq init my-plugin --targets claude-code,codex,opencode
+
+# Import an existing plugin and seed targets from its layout
+jacq init my-import --from ~/some-existing-cc-plugin --targets claude-code,codex
 
 # Validate without emitting
 jacq validate my-plugin
 
-# Build for all declared targets
+# Build IN-PLACE — adds target wrappers at the repo root.
+# Components (commands/, agents/, hooks/) stay at canonical locations,
+# never duplicated per target. The repo becomes a polyglot plugin.
+jacq build my-plugin
+
+# Build to an isolated tree (legacy mode) — useful for CI staging or
+# any case where artifacts must be separable from the source repo.
 jacq build my-plugin --output dist
-
-# Build for a specific target
-jacq build my-plugin --target codex --output dist
-
-# Pack as distributable tar.gz archives (one per target).
-# Claude Code targets also get a marketplace.json snippet alongside.
-jacq pack my-plugin --target claude-code --output dist
 ```
+
+## Build modes
+
+`jacq build` has two output policies:
+
+- **In-place (default).** Writes only target-specific *wrappers* at conventional locations relative to the source repo root: `.claude-plugin/plugin.json`, `.codex-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `package.json` (OpenCode), `openclaw.plugin.json`, plus MCP/LSP config and `AGENTS.md`. Components are not re-emitted — the source repo is trusted to have them at canonical paths. Result: one repo, polyglot, components live once.
+- **Isolated (`--output <dir>`).** Writes a full per-target tree under `<dir>/<target>/...`, including a copy of every component. Useful for CI staging, scripted distribution, or any flow that needs artifacts separable from source.
+
+## Marketplace metadata
+
+When a plugin's IR includes a `marketplace:` section (in `plugin.yaml`) or a hand-authored `.claude-plugin/marketplace.json` exists at the source root, jacq emits `.claude-plugin/marketplace.json` for the Claude Code target. plugin.yaml's `marketplace:` wins when both sources are present (with a warning). This lets a single repo be both a marketplace catalog and a plugin source — Claude Code discovers it from the repo root with no `dist/` indirection.
 
 ## Workspace
 
@@ -60,6 +74,8 @@ This is a Cargo workspace with two published crates:
 - **Multi-format parsing** — Auto-detects `.claude-plugin/plugin.json`, `.cursor-plugin/plugin.json`, `.codex-plugin/plugin.json`, `openclaw.plugin.json`, `plugin.yaml`, and bare `plugin.json`.
 - **Lenient input** — Handles real-world quirks: unquoted YAML colons, string `"true"`/`"false"` booleans.
 - **44-plugin roundtrip suite** — Tests against real upstream plugins from Anthropic's official marketplace and the Cursor marketplace template. parse → IR → emit → compare.
+- **Polyglot in-place build** — One source repo, multiple harness wrappers at conventional locations, no component duplication. `jacq build` adds the missing wrappers; `--output` toggles to legacy isolated-tree emit.
+- **Marketplace round-trip** — Parses both `plugin.yaml` `marketplace:` sections and `.claude-plugin/marketplace.json`, emits Claude Code marketplace listings byte-equivalent to the source.
 
 ## Spec coverage
 
@@ -80,7 +96,7 @@ Per [Rust Supply Chain Nightmare](https://kerkour.com/rust-supply-chain-nightmar
 - **License allowlist** — `deny.toml` enforces approved licenses only (MIT, Apache-2.0, BSD, ISC, MPL-2.0, a few others)
 - **Registry allowlist** — `deny.toml` blocks git URL and alternate registry dependencies
 - **cargo-audit + cargo-deny in CI** — weekly scheduled runs catch new advisories against unchanged deps
-- **Minimal deps** — 9 direct runtime dependencies (clap, serde, serde_json, serde_yaml, miette, thiserror, walkdir, tera, tar+flate2 for `jacq pack`)
+- **Minimal deps** — 7 direct runtime dependencies (clap, serde, serde_json, serde_yaml, miette, thiserror, walkdir, tera)
 
 Run the full audit locally:
 

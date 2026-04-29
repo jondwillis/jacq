@@ -312,3 +312,162 @@ mod real_plugins {
         assert!(notes.body.as_raw().contains("AppleScript"));
     }
 }
+
+// ===========================================================================
+// detect_targets — heuristic probing for existing target wrappers
+// ===========================================================================
+
+mod detect_targets {
+    use jacq_core::parser::detect_targets;
+    use jacq_core::targets::Target;
+    use tempfile::TempDir;
+
+    #[test]
+    fn detects_claude_code_via_plugin_json() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".claude-plugin")).unwrap();
+        std::fs::write(tmp.path().join(".claude-plugin/plugin.json"), "{}").unwrap();
+        assert_eq!(detect_targets(tmp.path()), vec![Target::ClaudeCode]);
+    }
+
+    #[test]
+    fn detects_claude_code_via_marketplace_json_alone() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".claude-plugin")).unwrap();
+        std::fs::write(tmp.path().join(".claude-plugin/marketplace.json"), "{}").unwrap();
+        assert_eq!(detect_targets(tmp.path()), vec![Target::ClaudeCode]);
+    }
+
+    #[test]
+    fn detects_codex() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".codex-plugin")).unwrap();
+        std::fs::write(tmp.path().join(".codex-plugin/plugin.json"), "{}").unwrap();
+        assert_eq!(detect_targets(tmp.path()), vec![Target::Codex]);
+    }
+
+    #[test]
+    fn detects_cursor() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".cursor-plugin")).unwrap();
+        std::fs::write(tmp.path().join(".cursor-plugin/plugin.json"), "{}").unwrap();
+        assert_eq!(detect_targets(tmp.path()), vec![Target::Cursor]);
+    }
+
+    #[test]
+    fn detects_openclaw() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("openclaw.plugin.json"), "{}").unwrap();
+        assert_eq!(detect_targets(tmp.path()), vec![Target::OpenClaw]);
+    }
+
+    #[test]
+    fn opencode_requires_both_package_json_and_dotopencode() {
+        // package.json alone — too generic, every npm project has one
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("package.json"), "{}").unwrap();
+        assert_eq!(detect_targets(tmp.path()), Vec::<Target>::new());
+
+        // .opencode/ alone — soft signal, manifest convention pairs them
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".opencode")).unwrap();
+        assert_eq!(detect_targets(tmp.path()), Vec::<Target>::new());
+
+        // Both — confident detection
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("package.json"), "{}").unwrap();
+        std::fs::create_dir_all(tmp.path().join(".opencode")).unwrap();
+        assert_eq!(detect_targets(tmp.path()), vec![Target::OpenCode]);
+    }
+
+    #[test]
+    fn detects_multiple_targets_in_polyglot_repo() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".claude-plugin")).unwrap();
+        std::fs::create_dir_all(tmp.path().join(".codex-plugin")).unwrap();
+        std::fs::write(tmp.path().join(".claude-plugin/plugin.json"), "{}").unwrap();
+        std::fs::write(tmp.path().join(".codex-plugin/plugin.json"), "{}").unwrap();
+        let detected = detect_targets(tmp.path());
+        assert!(detected.contains(&Target::ClaudeCode));
+        assert!(detected.contains(&Target::Codex));
+        assert_eq!(detected.len(), 2);
+    }
+
+    #[test]
+    fn empty_directory_detects_nothing() {
+        let tmp = TempDir::new().unwrap();
+        assert_eq!(detect_targets(tmp.path()), Vec::<Target>::new());
+    }
+}
+
+// ===========================================================================
+// Marketplace metadata parsing
+// ===========================================================================
+
+mod marketplace {
+    use super::*;
+    use jacq_core::ir::MarketplaceSource;
+
+    #[test]
+    fn parses_marketplace_json_alone_synthesizing_manifest() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".claude-plugin")).unwrap();
+        std::fs::write(
+            tmp.path().join(".claude-plugin/marketplace.json"),
+            r#"{
+              "name": "test-marketplace",
+              "owner": {"name": "Test Owner"},
+              "metadata": {"description": "test", "version": "1.2.3"},
+              "plugins": [
+                {"name": "test-marketplace", "source": "./", "description": "self"}
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        let ir = parse_plugin(tmp.path()).unwrap();
+        assert_eq!(ir.manifest.name, "test-marketplace");
+        assert_eq!(ir.manifest.version, "1.2.3");
+        assert!(ir.marketplace.is_some());
+        let mkt = ir.marketplace.unwrap();
+        assert_eq!(mkt.plugins.len(), 1);
+        assert_eq!(mkt.plugins[0].name, "test-marketplace");
+        assert!(matches!(&mkt.plugins[0].source, MarketplaceSource::Path(p) if p == "./"));
+    }
+
+    #[test]
+    fn parses_polymorphic_source_shapes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".claude-plugin")).unwrap();
+        std::fs::write(
+            tmp.path().join(".claude-plugin/marketplace.json"),
+            r#"{
+              "name": "shapes",
+              "owner": {"name": "Test"},
+              "plugins": [
+                {"name": "p1", "source": "./local"},
+                {"name": "p2", "source": {"source": "url", "url": "https://example.com/r.git", "sha": "abc"}},
+                {"name": "p3", "source": {"source": "git-subdir", "url": "x/y", "path": "p", "ref": "main"}},
+                {"name": "p4", "source": {"source": "github", "repo": "x/y"}}
+              ]
+            }"#,
+        )
+        .unwrap();
+
+        let ir = parse_plugin(tmp.path()).unwrap();
+        let mkt = ir.marketplace.unwrap();
+        assert!(matches!(&mkt.plugins[0].source, MarketplaceSource::Path(p) if p == "./local"));
+        assert!(matches!(
+            &mkt.plugins[1].source,
+            MarketplaceSource::Tagged(_)
+        ));
+        assert!(matches!(
+            &mkt.plugins[2].source,
+            MarketplaceSource::Tagged(_)
+        ));
+        assert!(matches!(
+            &mkt.plugins[3].source,
+            MarketplaceSource::Tagged(_)
+        ));
+    }
+}

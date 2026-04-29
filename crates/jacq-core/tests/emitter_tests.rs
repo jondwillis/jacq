@@ -138,6 +138,7 @@ fn build_ir(targets: Vec<Target>) -> PluginIR {
         output_styles: vec![],
         lsp_servers: vec![sample_lsp()],
         shared: vec![],
+        marketplace: None,
         target_overrides: BTreeMap::new(),
         source_dir: PathBuf::from("/tmp/test"),
         targets_inferred: false,
@@ -417,10 +418,13 @@ mod codex {
 
     #[test]
     fn emits_plugin_json() {
+        // Per upstream Codex (vendor/codex/codex-rs/core/src/plugins/manifest.rs:399),
+        // the manifest must live at `.codex-plugin/plugin.json` — same pattern
+        // as Claude Code's `.claude-plugin/plugin.json`.
         let ir = build_ir(vec![Target::Codex]);
         let (_tmp, out) = emit_codex(&ir);
 
-        let content = read_file(&out, "plugin.json");
+        let content = read_file(&out, ".codex-plugin/plugin.json");
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         assert_eq!(parsed["name"], "test-plugin");
@@ -495,7 +499,10 @@ mod integration {
         emit(&ir, tmp.path()).unwrap();
 
         // Should have output for both declared targets
-        assert!(file_exists(tmp.path(), "claude-code/.claude-plugin/plugin.json"));
+        assert!(file_exists(
+            tmp.path(),
+            "claude-code/.claude-plugin/plugin.json"
+        ));
         assert!(file_exists(tmp.path(), "opencode/package.json"));
     }
 }

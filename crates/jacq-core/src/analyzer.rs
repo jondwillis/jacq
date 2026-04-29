@@ -58,6 +58,35 @@ pub fn analyze_against(ir: &PluginIR, targets: &[Target]) -> AnalysisReport {
     let mut diagnostics = Vec::new();
     let mut summaries = BTreeMap::new();
 
+    // Marketplace self-reference consistency: a marketplace plugin entry with
+    // `source: "./"` is the marketplace pointing at the same repo as a plugin.
+    // Its `name` should match the manifest's `name`, otherwise a Claude Code
+    // user installing via this marketplace gets a plugin whose listing name
+    // disagrees with its actual identity.
+    if let Some(mkt) = &ir.marketplace
+        && targets.contains(&Target::ClaudeCode)
+    {
+        for entry in &mkt.plugins {
+            let is_self_ref = matches!(
+                &entry.source,
+                MarketplaceSource::Path(p) if p == "./" || p == "."
+            );
+            if is_self_ref && entry.name != ir.manifest.name {
+                diagnostics.push(Diagnostic {
+                    target: Target::ClaudeCode,
+                    capability: "marketplace".to_string(),
+                    severity: Severity::Warning,
+                    message: format!(
+                        "marketplace.json plugin entry '{}' has source './' but \
+                         manifest declares name '{}'. These should match — the \
+                         marketplace is listing this very repo as a plugin.",
+                        entry.name, ir.manifest.name,
+                    ),
+                });
+            }
+        }
+    }
+
     for target in targets {
         let matrix = capability_matrix(*target);
         let mut error_count = 0;
