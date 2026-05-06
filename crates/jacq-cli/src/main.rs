@@ -86,11 +86,7 @@ fn cmd_init(
             }
         }
     } else if dir.join("plugin.yaml").exists() {
-        return Err(format!(
-            "'{}' already contains a plugin.yaml",
-            dir.display()
-        )
-        .into());
+        return Err(format!("'{}' already contains a plugin.yaml", dir.display()).into());
     }
 
     if let Some(source) = from {
