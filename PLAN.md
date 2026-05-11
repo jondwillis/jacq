@@ -1,4 +1,4 @@
-# jacq — Agnostic Plugin Compiler
+# jacq — Polyglot Plugin Compiler
 
 > Named for the Jacquard loom (1804) — the first programmable machine. Schema = punch cards. Compiler = loom. Output = woven plugins.
 

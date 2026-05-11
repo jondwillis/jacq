@@ -1,6 +1,6 @@
 # jacq
 
-**Agnostic plugin compiler for AI coding agents.**
+**Polyglot plugin compiler for AI coding agents — capability-aware emit, with pre-flight compatibility analysis.**
 
 Named for the Jacquard loom (1804) — one source program, many target outputs.
 
@@ -16,6 +16,8 @@ plugin dir  →  PARSE  →  IR  →  ANALYZE  →  RENDER  →  EMIT
 ## Why?
 
 The AI coding agent ecosystem is fragmenting into incompatible plugin systems. Each target has its own manifest format, component layout, supported features, and frontmatter conventions. Authors who want to support multiple tools are forced to maintain parallel copies of the same plugin. jacq fixes that.
+
+jacq compiles, it doesn't copy. Fan-out installers (e.g. `npx skills`) ship one `SKILL.md` to many agent directories — great for skill-only plugins, but the same file lands everywhere. jacq translates an IR into each target's native manifest, components, and configuration shape, and fails the build when a component (e.g. a `PreToolUse` hook) can't be expressed on a target that doesn't support it.
 
 ## Quick start
 

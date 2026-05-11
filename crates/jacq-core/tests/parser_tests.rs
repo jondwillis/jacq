@@ -249,7 +249,8 @@ mod errors {
 
     #[test]
     fn no_manifest_returns_error() {
-        let result = parse_plugin(&fixture("empty-dir"));
+        let tmp = tempfile::TempDir::new().unwrap();
+        let result = parse_plugin(tmp.path());
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(

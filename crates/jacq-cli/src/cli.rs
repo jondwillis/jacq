@@ -10,7 +10,7 @@ use jacq_core::targets::Target;
 #[command(
     name = "jacq",
     version,
-    about = "Agnostic plugin compiler for AI coding agents",
+    about = "Polyglot plugin compiler for AI coding agents",
     long_about = "jacq compiles plugin definitions into valid, optimized plugins \
                   for multiple AI coding agent harnesses (Claude Code, OpenCode, \
                   Codex, Cursor, and more).\n\n\
